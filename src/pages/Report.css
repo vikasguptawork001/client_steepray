@@ -1,0 +1,87 @@
+.report {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.date-filters {
+  display: flex;
+  gap: 15px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.date-filters .form-group {
+  margin-bottom: 0;
+}
+
+.date-input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 200px;
+}
+
+.summary-card {
+  margin-bottom: 20px;
+}
+
+.summary-card h3 {
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+.summary-item label {
+  font-weight: 500;
+  color: #666;
+}
+
+.summary-item span {
+  font-weight: 600;
+  color: #333;
+  font-size: 18px;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.fully_paid {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-badge.partially_paid {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+
+
+
+
+

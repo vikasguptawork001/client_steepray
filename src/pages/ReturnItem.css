@@ -1,0 +1,33 @@
+.return-item {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.selected-item-info {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border-radius: 4px;
+  margin: 15px 0;
+}
+
+.selected-item-info h3 {
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.selected-item-info p {
+  margin: 5px 0;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+
+
+
+
+
