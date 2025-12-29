@@ -1,0 +1,5 @@
+static_sites:
+  - name: inventory-client
+    buildCommand: npm install && npm run build
+    publishPath: build
+
