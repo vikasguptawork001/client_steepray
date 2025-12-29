@@ -6,7 +6,7 @@ const config = {
   // API Base URL
   // In development: uses localhost
   // In production: set via REACT_APP_API_URL environment variable
-  apiBaseUrl:'https://inventory-4p3l.onrender.com',
+  apiBaseUrl:'https://server-steepray.onrender.com',
   
   // API Endpoints
   api: {
