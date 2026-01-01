@@ -81,6 +81,21 @@ const Layout = ({ children }) => {
           {children}
         </main>
       </div>
+
+      <footer className="footer">
+        <div className="footer-content">
+          <div className="footer-section">
+            <p className="footer-copyright">
+              © {new Date().getFullYear()} Steepray Information Services Private Limited. All rights reserved.
+            </p>
+          </div>
+          <div className="footer-section">
+            <p className="footer-credits">
+              Designed and Developed by <strong>Steepray Info Solutions</strong>
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

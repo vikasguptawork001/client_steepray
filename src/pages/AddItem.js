@@ -4,14 +4,19 @@ import apiClient from '../config/axios';
 import config from '../config/config';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import './AddItem.css';
 
 const AddItem = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [buyerParties, setBuyerParties] = useState([]);
   const [selectedBuyer, setSelectedBuyer] = useState('');
   const [buyerInfo, setBuyerInfo] = useState(null);
+  const [buyerSearchQuery, setBuyerSearchQuery] = useState('');
+  const [filteredBuyerParties, setFilteredBuyerParties] = useState([]);
+  const [showBuyerSuggestions, setShowBuyerSuggestions] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedItems, setSuggestedItems] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
@@ -21,12 +26,14 @@ const AddItem = () => {
     product_code: '',
     brand: '',
     hsn_number: '',
-    tax_rate: 0,
+    tax_rate: 18,
     sale_rate: 0,
     purchase_rate: 0,
     alert_quantity: 0,
-    rack_number: ''
+    rack_number: '',
+    remarks: ''
   });
+  const [itemImage, setItemImage] = useState(null);
 
   useEffect(() => {
     // Check if user has permission to add items
@@ -45,6 +52,21 @@ const AddItem = () => {
       fetchBuyerInfo();
     }
   }, [selectedBuyer]);
+
+  useEffect(() => {
+    if (buyerSearchQuery.trim() === '') {
+      setFilteredBuyerParties(buyerParties);
+      setShowBuyerSuggestions(false);
+    } else {
+      const filtered = buyerParties.filter(party =>
+        party.party_name.toLowerCase().includes(buyerSearchQuery.toLowerCase()) ||
+        (party.mobile_number && party.mobile_number.includes(buyerSearchQuery)) ||
+        (party.address && party.address.toLowerCase().includes(buyerSearchQuery.toLowerCase()))
+      );
+      setFilteredBuyerParties(filtered);
+      setShowBuyerSuggestions(true);
+    }
+  }, [buyerSearchQuery, buyerParties]);
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
@@ -67,9 +89,17 @@ const AddItem = () => {
     try {
       const response = await apiClient.get(`${config.api.buyers}/${selectedBuyer}`);
       setBuyerInfo(response.data.party);
+      setBuyerSearchQuery(response.data.party.party_name);
+      setShowBuyerSuggestions(false);
     } catch (error) {
       console.error('Error fetching buyer info:', error);
     }
+  };
+
+  const selectBuyerParty = (party) => {
+    setSelectedBuyer(party.id);
+    setBuyerSearchQuery(party.party_name);
+    setShowBuyerSuggestions(false);
   };
 
   const searchItems = async () => {
@@ -83,29 +113,42 @@ const AddItem = () => {
     }
   };
 
-  const addItemToCart = (item) => {
-    const existingItem = selectedItems.find(i => i.item_id === item.id);
-    if (existingItem) {
-      setSelectedItems(selectedItems.map(i =>
-        i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i
-      ));
-    } else {
-      setSelectedItems([...selectedItems, {
-        item_id: item.id,
-        product_name: item.product_name,
-        product_code: item.product_code || '',
-        brand: item.brand || '',
-        hsn_number: '',
-        tax_rate: 0,
-        sale_rate: item.sale_rate,
-        purchase_rate: 0,
-        quantity: 1,
-        alert_quantity: 0,
-        rack_number: ''
-      }]);
+  const addItemToCart = async (item) => {
+    try {
+      // Fetch full item details from database to get all saved data
+      const response = await apiClient.get(`${config.api.items}/${item.id}`);
+      const fullItemData = response.data.item;
+      
+      const existingItem = selectedItems.find(i => i.item_id === item.id);
+      if (existingItem) {
+        // If item already in cart, just increment quantity
+        setSelectedItems(selectedItems.map(i =>
+          i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i
+        ));
+      } else {
+        // Add item with all saved data from database, only quantity is editable
+        setSelectedItems([...selectedItems, {
+          item_id: fullItemData.id,
+          product_name: fullItemData.product_name,
+          product_code: fullItemData.product_code || '',
+          brand: fullItemData.brand || '',
+          hsn_number: fullItemData.hsn_number || '',
+          tax_rate: fullItemData.tax_rate && [5, 18, 28].includes(fullItemData.tax_rate) ? fullItemData.tax_rate : 18,
+          sale_rate: fullItemData.sale_rate,
+          purchase_rate: fullItemData.purchase_rate || 0,
+          quantity: 1, // Only this field will be editable
+          alert_quantity: fullItemData.alert_quantity || 0,
+          rack_number: fullItemData.rack_number || '',
+          remarks: fullItemData.remarks || '',
+          current_quantity: fullItemData.quantity || 0 // Store current quantity for reference
+        }]);
+      }
+      setSearchQuery('');
+      setSuggestedItems([]);
+    } catch (error) {
+      console.error('Error fetching item details:', error);
+      toast.error('Error loading item details');
     }
-    setSearchQuery('');
-    setSuggestedItems([]);
   };
 
   const updateItem = (itemId, field, value) => {
@@ -121,29 +164,45 @@ const AddItem = () => {
   const handleAddNewItem = async () => {
     // Validation
     if (!newItem.product_name || newItem.product_name.trim() === '') {
-      alert('Product name is required');
+      toast.error('Product name is required');
       return;
     }
 
     if (!newItem.sale_rate || newItem.sale_rate <= 0) {
-      alert('Sale rate is required and must be greater than 0');
+      toast.error('Sale rate is required and must be greater than 0');
       return;
     }
 
     if (!newItem.purchase_rate || newItem.purchase_rate <= 0) {
-      alert('Purchase rate is required and must be greater than 0');
+      toast.error('Purchase rate is required and must be greater than 0');
+      return;
+    }
+
+    // Validate sale_rate >= purchase_rate
+    if (parseFloat(newItem.sale_rate) < parseFloat(newItem.purchase_rate)) {
+      toast.error('Sale rate must be greater than or equal to purchase rate');
       return;
     }
 
     try {
-      const response = await apiClient.post(config.api.items, newItem);
-      
-      // Add the newly created item to cart with quantity 1 (user can adjust)
-      addItemToCart({ 
-        ...newItem, 
-        id: response.data.id,
-        quantity: 1  // Default quantity, user can adjust
+      // Create FormData for image upload
+      const formData = new FormData();
+      Object.keys(newItem).forEach(key => {
+        formData.append(key, newItem[key]);
       });
+      if (itemImage) {
+        formData.append('image', itemImage);
+      }
+
+      const response = await apiClient.post(config.api.items, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      // Fetch the created item to get all saved data, then add to cart
+      const createdItemResponse = await apiClient.get(`${config.api.items}/${response.data.id}`);
+      addItemToCart(createdItemResponse.data.item);
       
       // Reset form
       setNewItem({
@@ -151,19 +210,21 @@ const AddItem = () => {
         product_code: '',
         brand: '',
         hsn_number: '',
-        tax_rate: 0,
+        tax_rate: 18,
         sale_rate: 0,
         purchase_rate: 0,
         alert_quantity: 0,
-        rack_number: ''
+        rack_number: '',
+        remarks: ''
       });
+      setItemImage(null);
       setShowAddItemForm(false);
       
       // Show success message
-      alert('Product "' + newItem.product_name + '" added successfully! You can now set the quantity and add it to inventory.');
+      toast.success(`Product "${newItem.product_name}" added successfully! You can now set the quantity and add it to inventory.`);
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Unknown error occurred';
-      alert('Error adding item: ' + errorMessage);
+      toast.error('Error adding item: ' + errorMessage);
     }
   };
 
@@ -182,13 +243,13 @@ const AddItem = () => {
         buyer_party_id: selectedBuyer,
         items: selectedItems
       });
-      alert('Items added successfully!');
+      toast.success('Items added successfully!');
       setSelectedItems([]);
       setSelectedBuyer('');
       setBuyerInfo(null);
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Unknown error occurred';
-      alert('Error saving items: ' + errorMessage);
+      toast.error('Error saving items: ' + errorMessage);
     }
   };
 
@@ -220,16 +281,44 @@ const AddItem = () => {
         <div className="card">
           <div className="form-group">
             <label>Select Buyer Party *</label>
-            <select
-              value={selectedBuyer}
-              onChange={(e) => setSelectedBuyer(e.target.value)}
-              required
-            >
-              <option value="">-- Select Buyer Party --</option>
-              {buyerParties.map(party => (
-                <option key={party.id} value={party.id}>{party.party_name}</option>
-              ))}
-            </select>
+            <div className="search-wrapper" style={{ position: 'relative' }}>
+              <input
+                type="text"
+                placeholder="Search buyer party by name, mobile, or address..."
+                value={buyerSearchQuery}
+                onChange={(e) => {
+                  setBuyerSearchQuery(e.target.value);
+                  if (!e.target.value) {
+                    setSelectedBuyer('');
+                    setBuyerInfo(null);
+                  }
+                }}
+                onFocus={() => {
+                  if (buyerSearchQuery) {
+                    setShowBuyerSuggestions(true);
+                  }
+                }}
+                required
+              />
+              {showBuyerSuggestions && filteredBuyerParties.length > 0 && (
+                <div className="suggestions" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                  {filteredBuyerParties.map(party => (
+                    <div
+                      key={party.id}
+                      className="suggestion-item"
+                      onClick={() => selectBuyerParty(party)}
+                    >
+                      {party.party_name} {party.mobile_number && `- ${party.mobile_number}`}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {buyerSearchQuery && filteredBuyerParties.length === 0 && (
+                <div className="suggestions" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000 }}>
+                  <div className="suggestion-item">No buyer party found</div>
+                </div>
+              )}
+            </div>
             {buyerParties.length === 0 && (
               <p style={{ color: '#ff6b6b', fontSize: '14px', marginTop: '5px' }}>
                 No buyer parties found. Please <Link to="/add-buyer-party">add a buyer party</Link> first.
@@ -238,13 +327,21 @@ const AddItem = () => {
           </div>
 
           {buyerInfo && (
-            <div className="buyer-info">
-              <h3>Buyer Information</h3>
-              <p><strong>Name:</strong> {buyerInfo.party_name}</p>
-              <p><strong>Mobile:</strong> {buyerInfo.mobile_number}</p>
-              <p><strong>Address:</strong> {buyerInfo.address}</p>
-              <p><strong>Balance Amount:</strong> ₹{buyerInfo.balance_amount}</p>
-              <p><strong>Paid Amount:</strong> ₹{buyerInfo.paid_amount}</p>
+            <div className="buyer-info" style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+              gap: '15px',
+              marginTop: '15px',
+              padding: '15px',
+              backgroundColor: '#f9f9f9',
+              borderRadius: '5px'
+            }}>
+              <div><strong>Name:</strong> {buyerInfo.party_name}</div>
+              <div><strong>Mobile:</strong> {buyerInfo.mobile_number || 'N/A'}</div>
+              <div><strong>Address:</strong> {buyerInfo.address || 'N/A'}</div>
+              {buyerInfo.gst_number && <div><strong>GST Number:</strong> {buyerInfo.gst_number}</div>}
+              <div><strong>Balance Amount:</strong> ₹{buyerInfo.balance_amount || 0}</div>
+              <div><strong>Paid Amount:</strong> ₹{buyerInfo.paid_amount || 0}</div>
             </div>
           )}
 
@@ -330,11 +427,16 @@ const AddItem = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Tax Rate (%)</label>
-                  <input
-                    type="number"
+                  <select
                     value={newItem.tax_rate}
-                    onChange={(e) => setNewItem({ ...newItem, tax_rate: parseFloat(e.target.value) || 0 })}
-                  />
+                    onChange={(e) => {
+                      setNewItem({ ...newItem, tax_rate: parseFloat(e.target.value) || 18 });
+                    }}
+                  >
+                    <option value="5">5%</option>
+                    <option value="18">18%</option>
+                    <option value="28">28%</option>
+                  </select>
                 </div>
                 <div className="form-group">
                   <label>Sale Rate *</label>
@@ -342,11 +444,23 @@ const AddItem = () => {
                     type="number"
                     step="0.01"
                     min="0"
-                    value={newItem.sale_rate}
-                    onChange={(e) => setNewItem({ ...newItem, sale_rate: parseFloat(e.target.value) || 0 })}
+                    value={newItem.sale_rate === 0 ? '' : newItem.sale_rate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const saleRate = val === '' ? 0 : parseFloat(val) || 0;
+                      setNewItem({ ...newItem, sale_rate: saleRate });
+                    }}
                     placeholder="0.00"
                     required
+                    style={{
+                      borderColor: newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate ? '#dc3545' : undefined
+                    }}
                   />
+                  {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate && (
+                    <small style={{ color: '#dc3545', display: 'block', marginTop: '5px' }}>
+                      ⚠️ Sale rate must be ≥ purchase rate
+                    </small>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Purchase Rate *</label>
@@ -354,11 +468,28 @@ const AddItem = () => {
                     type="number"
                     step="0.01"
                     min="0"
-                    value={newItem.purchase_rate}
-                    onChange={(e) => setNewItem({ ...newItem, purchase_rate: parseFloat(e.target.value) || 0 })}
+                    value={newItem.purchase_rate === 0 ? '' : newItem.purchase_rate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const purchaseRate = val === '' ? 0 : parseFloat(val) || 0;
+                      setNewItem({ ...newItem, purchase_rate: purchaseRate });
+                    }}
                     placeholder="0.00"
                     required
+                    style={{
+                      borderColor: newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate ? '#dc3545' : undefined
+                    }}
                   />
+                  {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate && (
+                    <small style={{ color: '#dc3545', display: 'block', marginTop: '5px' }}>
+                      ⚠️ Purchase rate cannot be greater than sale rate
+                    </small>
+                  )}
+                  {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate >= newItem.purchase_rate && (
+                    <small style={{ color: '#28a745', display: 'block', marginTop: '5px' }}>
+                      ✓ Valid: Profit margin: ₹{(newItem.sale_rate - newItem.purchase_rate).toFixed(2)} ({(newItem.purchase_rate > 0 ? (((newItem.sale_rate - newItem.purchase_rate) / newItem.purchase_rate) * 100).toFixed(2) : 0)}%)
+                    </small>
+                  )}
                 </div>
               </div>
               <div className="form-row">
@@ -366,19 +497,166 @@ const AddItem = () => {
                   <label>Alert Quantity</label>
                   <input
                     type="number"
-                    value={newItem.alert_quantity}
-                    onChange={(e) => setNewItem({ ...newItem, alert_quantity: parseInt(e.target.value) || 0 })}
+                    value={newItem.alert_quantity === 0 ? '' : newItem.alert_quantity}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewItem({ ...newItem, alert_quantity: val === '' ? 0 : parseInt(val) || 0 });
+                    }}
                   />
                 </div>
-                <div className="form-group">
-                  <label>Rack Number</label>
-                  <input
-                    type="text"
-                    value={newItem.rack_number}
-                    onChange={(e) => setNewItem({ ...newItem, rack_number: e.target.value })}
-                  />
-                </div>
+                  <div className="form-group">
+                    <label>Rack Number</label>
+                    <input
+                      type="text"
+                      value={newItem.rack_number}
+                      onChange={(e) => setNewItem({ ...newItem, rack_number: e.target.value })}
+                    />
+                  </div>
               </div>
+              <div className="form-group">
+                <label>Remarks (Max 200 characters)</label>
+                <textarea
+                  value={newItem.remarks}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value.length <= 200) {
+                      setNewItem({ ...newItem, remarks: value });
+                    }
+                  }}
+                  rows="3"
+                  maxLength={200}
+                  placeholder="Enter remarks..."
+                />
+                <small style={{ color: '#666', fontSize: '12px' }}>
+                  {newItem.remarks?.length || 0}/200 characters
+                </small>
+              </div>
+              <div className="form-group">
+                <label>Product Image (Max 3MB)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      if (file.size > 3 * 1024 * 1024) {
+                        alert('Image size must be less than 3MB');
+                        e.target.value = '';
+                        return;
+                      }
+                      setItemImage(file);
+                    }
+                  }}
+                />
+                {itemImage && (
+                  <div style={{ marginTop: '10px' }}>
+                    <img 
+                      src={URL.createObjectURL(itemImage)} 
+                      alt="Preview" 
+                      style={{ maxWidth: '200px', maxHeight: '200px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setItemImage(null);
+                        document.querySelector('input[type="file"]').value = '';
+                      }}
+                      style={{ marginLeft: '10px', padding: '5px 10px' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Preview Section */}
+              {(newItem.product_name || newItem.sale_rate > 0 || newItem.purchase_rate > 0) && (
+                <div style={{ 
+                  marginTop: '20px', 
+                  padding: '15px', 
+                  backgroundColor: '#f8f9fa', 
+                  borderRadius: '5px',
+                  border: '1px solid #dee2e6'
+                }}>
+                  <h4 style={{ marginTop: 0, marginBottom: '15px', color: '#495057' }}>Preview</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                    {newItem.product_name && (
+                      <div>
+                        <strong>Product Name:</strong> {newItem.product_name}
+                      </div>
+                    )}
+                    {newItem.product_code && (
+                      <div>
+                        <strong>Product Code:</strong> {newItem.product_code}
+                      </div>
+                    )}
+                    {newItem.brand && (
+                      <div>
+                        <strong>Brand:</strong> {newItem.brand}
+                      </div>
+                    )}
+                    {newItem.hsn_number && (
+                      <div>
+                        <strong>HSN:</strong> {newItem.hsn_number}
+                      </div>
+                    )}
+                    {newItem.tax_rate > 0 && (
+                      <div>
+                        <strong>Tax Rate:</strong> {newItem.tax_rate}%
+                      </div>
+                    )}
+                    {newItem.sale_rate > 0 && (
+                      <div>
+                        <strong>Sale Rate:</strong> ₹{parseFloat(newItem.sale_rate).toFixed(2)}
+                      </div>
+                    )}
+                    {newItem.purchase_rate > 0 && (
+                      <div>
+                        <strong>Purchase Rate:</strong> ₹{parseFloat(newItem.purchase_rate).toFixed(2)}
+                      </div>
+                    )}
+                    {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && (
+                      <div style={{
+                        gridColumn: '1 / -1',
+                        padding: '10px',
+                        backgroundColor: newItem.sale_rate >= newItem.purchase_rate ? '#d4edda' : '#f8d7da',
+                        borderRadius: '5px',
+                        border: `1px solid ${newItem.sale_rate >= newItem.purchase_rate ? '#c3e6cb' : '#f5c6cb'}`
+                      }}>
+                        <strong>Profit Analysis:</strong>
+                        {newItem.sale_rate >= newItem.purchase_rate ? (
+                          <div style={{ color: '#155724', marginTop: '5px' }}>
+                            ✓ Profit Margin: ₹{(newItem.sale_rate - newItem.purchase_rate).toFixed(2)}
+                            {newItem.purchase_rate > 0 && (
+                              <span> ({(newItem.purchase_rate > 0 ? (((newItem.sale_rate - newItem.purchase_rate) / newItem.purchase_rate) * 100).toFixed(2) : 0)}%)</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ color: '#721c24', marginTop: '5px' }}>
+                            ⚠️ Invalid: Sale rate is less than purchase rate (Loss: ₹{(newItem.purchase_rate - newItem.sale_rate).toFixed(2)})
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {newItem.alert_quantity > 0 && (
+                      <div>
+                        <strong>Alert Quantity:</strong> {newItem.alert_quantity}
+                      </div>
+                    )}
+                    {newItem.rack_number && (
+                      <div>
+                        <strong>Rack Number:</strong> {newItem.rack_number}
+                      </div>
+                    )}
+                    {newItem.remarks && (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <strong>Remarks:</strong> {newItem.remarks}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="form-actions">
                 <button onClick={handleAddNewItem} className="btn btn-primary">Add Product</button>
                 <button onClick={() => {
@@ -388,12 +666,14 @@ const AddItem = () => {
                     product_code: '',
                     brand: '',
                     hsn_number: '',
-                    tax_rate: 0,
+                    tax_rate: 18,
                     sale_rate: 0,
                     purchase_rate: 0,
                     alert_quantity: 0,
-                    rack_number: ''
+                    rack_number: '',
+                    remarks: ''
                   });
+                  setItemImage(null);
                 }} className="btn btn-secondary">Cancel</button>
               </div>
             </div>
@@ -415,6 +695,7 @@ const AddItem = () => {
                     <th>Quantity</th>
                     <th>Alert Qty</th>
                     <th>Rack No</th>
+                    <th>Remarks</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -423,76 +704,54 @@ const AddItem = () => {
                     <tr key={index}>
                       <td>{item.product_name}</td>
                       <td>
-                        <input
-                          type="text"
-                          value={item.product_code}
-                          onChange={(e) => updateItem(item.item_id, 'product_code', e.target.value)}
-                          style={{ width: '100px' }}
-                        />
+                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.product_code || '-'}</span>
                       </td>
                       <td>
-                        <input
-                          type="text"
-                          value={item.brand}
-                          onChange={(e) => updateItem(item.item_id, 'brand', e.target.value)}
-                          style={{ width: '100px' }}
-                        />
+                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.brand || '-'}</span>
                       </td>
                       <td>
-                        <input
-                          type="text"
-                          value={item.hsn_number}
-                          onChange={(e) => updateItem(item.item_id, 'hsn_number', e.target.value)}
-                          style={{ width: '80px' }}
-                        />
+                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.hsn_number || '-'}</span>
+                      </td>
+                      <td>
+                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.tax_rate || 0}%</span>
+                      </td>
+                      <td>
+                        <span style={{ padding: '5px', display: 'inline-block' }}>₹{parseFloat(item.sale_rate || 0).toFixed(2)}</span>
+                      </td>
+                      <td>
+                        <span style={{ padding: '5px', display: 'inline-block' }}>₹{parseFloat(item.purchase_rate || 0).toFixed(2)}</span>
                       </td>
                       <td>
                         <input
                           type="number"
-                          value={item.tax_rate}
-                          onChange={(e) => updateItem(item.item_id, 'tax_rate', parseFloat(e.target.value) || 0)}
-                          style={{ width: '80px' }}
+                          min="1"
+                          value={item.quantity === 0 ? '' : item.quantity}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const qty = val === '' ? 0 : parseInt(val) || 0;
+                            if (qty >= 0) {
+                              updateItem(item.item_id, 'quantity', qty);
+                            }
+                          }}
+                          style={{ width: '80px', fontWeight: 'bold' }}
+                          placeholder="Qty"
                         />
+                        {item.current_quantity !== undefined && (
+                          <small style={{ display: 'block', color: '#666', fontSize: '11px', marginTop: '2px' }}>
+                            Current: {item.current_quantity}
+                          </small>
+                        )}
                       </td>
                       <td>
-                        <input
-                          type="number"
-                          value={item.sale_rate}
-                          onChange={(e) => updateItem(item.item_id, 'sale_rate', parseFloat(e.target.value) || 0)}
-                          style={{ width: '100px' }}
-                        />
+                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.alert_quantity || 0}</span>
                       </td>
                       <td>
-                        <input
-                          type="number"
-                          value={item.purchase_rate}
-                          onChange={(e) => updateItem(item.item_id, 'purchase_rate', parseFloat(e.target.value) || 0)}
-                          style={{ width: '100px' }}
-                        />
+                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.rack_number || '-'}</span>
                       </td>
                       <td>
-                        <input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => updateItem(item.item_id, 'quantity', parseInt(e.target.value) || 0)}
-                          style={{ width: '80px' }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          value={item.alert_quantity}
-                          onChange={(e) => updateItem(item.item_id, 'alert_quantity', parseInt(e.target.value) || 0)}
-                          style={{ width: '80px' }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          value={item.rack_number}
-                          onChange={(e) => updateItem(item.item_id, 'rack_number', e.target.value)}
-                          style={{ width: '80px' }}
-                        />
+                        <span style={{ padding: '5px', display: 'inline-block', fontSize: '12px' }} title={item.remarks || ''}>
+                          {item.remarks ? (item.remarks.length > 20 ? item.remarks.substring(0, 20) + '...' : item.remarks) : '-'}
+                        </span>
                       </td>
                       <td>
                         <button

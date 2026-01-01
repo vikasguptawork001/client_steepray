@@ -6,7 +6,7 @@ const config = {
   // API Base URL
   // In development: uses localhost
   // In production: set via REACT_APP_API_URL environment variable
-  apiBaseUrl:'https://server-steepray.onrender.com',
+  apiBaseUrl:'http://localhost:5000',
   
   // API Endpoints
   api: {
@@ -19,10 +19,13 @@ const config = {
     itemsSearch: '/api/items/search',
     itemsAdvancedSearch: '/api/items/advanced-search',
     itemsPurchase: '/api/items/purchase',
+    itemsStockTotal: '/api/items/stock/total-amount',
     
     // Parties endpoints
     buyers: '/api/parties/buyers',
+    buyersRetail: '/api/parties/buyers/retail',
     sellers: '/api/parties/sellers',
+    sellersRetail: '/api/parties/sellers/retail',
     
     // Transactions endpoints
     sale: '/api/transactions/sale',

@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Provider } from 'react-redux';
+import { store } from './store/store';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AddItem from './pages/AddItem';
@@ -11,6 +13,7 @@ import ReturnReport from './pages/ReturnReport';
 import ReturnItem from './pages/ReturnItem';
 import OrderSheet from './pages/OrderSheet';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import './App.css';
 
 const PrivateRoute = ({ children }) => {
@@ -25,9 +28,11 @@ const PrivateRoute = ({ children }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
+    <Provider store={store}>
+      <AuthProvider>
+        <ToastProvider>
+          <Router>
+          <Routes>
           <Route path="/login" element={<Login />} />
           <Route
             path="/dashboard"
@@ -102,9 +107,11 @@ function App() {
             }
           />
           <Route path="/" element={<Navigate to="/dashboard" />} />
-        </Routes>
-      </Router>
+          </Routes>
+        </Router>
+      </ToastProvider>
     </AuthProvider>
+    </Provider>
   );
 }
 

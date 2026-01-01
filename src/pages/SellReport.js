@@ -14,10 +14,13 @@ const SellReport = () => {
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [gstFilter, setGstFilter] = useState('all'); // 'all', 'with_gst', 'without_gst'
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [showBillModal, setShowBillModal] = useState(false);
 
   useEffect(() => {
     fetchReport();
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, gstFilter]);
 
   const fetchReport = async () => {
     try {
@@ -25,7 +28,7 @@ const SellReport = () => {
       const from = fromDate.toISOString().split('T')[0];
       const to = toDate.toISOString().split('T')[0];
       const response = await apiClient.get(config.api.salesReport, {
-        params: { from_date: from, to_date: to }
+        params: { from_date: from, to_date: to, gst_filter: gstFilter }
       });
       setTransactions(response.data.transactions);
       setSummary(response.data.summary);
@@ -88,6 +91,18 @@ const SellReport = () => {
                 className="date-input"
               />
             </div>
+            <div className="form-group">
+              <label>GST Filter</label>
+              <select 
+                value={gstFilter} 
+                onChange={(e) => setGstFilter(e.target.value)}
+                className="date-input"
+              >
+                <option value="all">All Bills</option>
+                <option value="with_gst">With GST</option>
+                <option value="without_gst">Without GST</option>
+              </select>
+            </div>
             <button onClick={fetchReport} className="btn btn-primary">
               Refresh
             </button>
@@ -120,6 +135,18 @@ const SellReport = () => {
                 <label>Total Transactions:</label>
                 <span>{summary.totalTransactions}</span>
               </div>
+              {summary.withGstCount !== undefined && (
+                <>
+                  <div className="summary-item">
+                    <label>With GST Bills:</label>
+                    <span>{summary.withGstCount}</span>
+                  </div>
+                  <div className="summary-item">
+                    <label>Without GST Bills:</label>
+                    <span>{summary.withoutGstCount}</span>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -138,12 +165,14 @@ const SellReport = () => {
                   <th>Paid Amount</th>
                   <th>Balance Amount</th>
                   <th>Payment Status</th>
+                  <th>GST</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ textAlign: 'center' }}>No transactions found</td>
+                    <td colSpan="9" style={{ textAlign: 'center' }}>No transactions found</td>
                   </tr>
                 ) : (
                   transactions.map((txn) => (
@@ -151,19 +180,73 @@ const SellReport = () => {
                       <td>{new Date(txn.transaction_date).toLocaleDateString()}</td>
                       <td>{txn.bill_number}</td>
                       <td>{txn.party_name}</td>
-                      <td>₹{txn.total_amount}</td>
-                      <td>₹{txn.paid_amount}</td>
-                      <td>₹{txn.balance_amount}</td>
+                      <td>₹{parseFloat(txn.total_amount).toFixed(2)}</td>
+                      <td>₹{parseFloat(txn.paid_amount).toFixed(2)}</td>
+                      <td>₹{parseFloat(txn.balance_amount).toFixed(2)}</td>
                       <td>
                         <span className={`status-badge ${txn.payment_status}`}>
                           {txn.payment_status.replace('_', ' ').toUpperCase()}
                         </span>
+                      </td>
+                      <td>
+                        <span className={`status-badge ${txn.with_gst ? 'with-gst' : 'without-gst'}`}>
+                          {txn.with_gst ? 'GST' : 'Non-GST'}
+                        </span>
+                      </td>
+                      <td>
+                        <button 
+                          onClick={() => {
+                            setSelectedBill(txn);
+                            setShowBillModal(true);
+                          }}
+                          className="btn btn-primary"
+                          style={{ padding: '5px 10px', fontSize: '12px' }}
+                        >
+                          View Details
+                        </button>
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Bill Details Modal */}
+        {showBillModal && selectedBill && (
+          <div className="modal-overlay" onClick={() => setShowBillModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflow: 'auto' }}>
+              <div className="modal-header">
+                <h3>Bill Details - {selectedBill.bill_number}</h3>
+                <button onClick={() => setShowBillModal(false)} className="btn-close">&times;</button>
+              </div>
+              <div className="modal-body">
+                <div style={{ marginBottom: '20px' }}>
+                  <p><strong>Date:</strong> {new Date(selectedBill.transaction_date).toLocaleDateString()}</p>
+                  <p><strong>Party Name:</strong> {selectedBill.party_name}</p>
+                  <p><strong>Bill Number:</strong> {selectedBill.bill_number}</p>
+                  <p><strong>GST Type:</strong> {selectedBill.with_gst ? 'With GST' : 'Without GST'}</p>
+                  <p><strong>Total Amount:</strong> ₹{parseFloat(selectedBill.total_amount).toFixed(2)}</p>
+                  <p><strong>Paid Amount:</strong> ₹{parseFloat(selectedBill.paid_amount).toFixed(2)}</p>
+                  <p><strong>Balance Amount:</strong> ₹{parseFloat(selectedBill.balance_amount).toFixed(2)}</p>
+                  <p><strong>Payment Status:</strong> {selectedBill.payment_status.replace('_', ' ').toUpperCase()}</p>
+                  {selectedBill.previous_balance_paid > 0 && (
+                    <p><strong>Previous Balance Paid:</strong> ₹{parseFloat(selectedBill.previous_balance_paid).toFixed(2)}</p>
+                  )}
+                </div>
+                <div style={{ textAlign: 'center', marginTop: '20px' }}>
+                  <button 
+                    onClick={() => {
+                      window.open(config.api.billPdf(selectedBill.id), '_blank');
+                    }}
+                    className="btn btn-success"
+                  >
+                    Download PDF
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

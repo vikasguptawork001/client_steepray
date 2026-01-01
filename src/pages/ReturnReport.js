@@ -9,22 +9,25 @@ import './Report.css';
 const ReturnReport = () => {
   const [fromDate, setFromDate] = useState(new Date());
   const [toDate, setToDate] = useState(new Date());
+  const [partyType, setPartyType] = useState(''); // 'seller', 'buyer', or '' for all
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     fetchReport();
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, partyType]);
 
   const fetchReport = async () => {
     try {
       setLoading(true);
       const from = fromDate.toISOString().split('T')[0];
       const to = toDate.toISOString().split('T')[0];
-      const response = await apiClient.get(config.api.returnsReport, {
-        params: { from_date: from, to_date: to }
-      });
+      const params = { from_date: from, to_date: to };
+      if (partyType) {
+        params.party_type = partyType;
+      }
+      const response = await apiClient.get(config.api.returnsReport, { params });
       setTransactions(response.data.transactions);
       setSummary(response.data.summary);
     } catch (error) {
@@ -38,8 +41,12 @@ const ReturnReport = () => {
     try {
       const from = fromDate.toISOString().split('T')[0];
       const to = toDate.toISOString().split('T')[0];
+      const params = { from_date: from, to_date: to };
+      if (partyType) {
+        params.party_type = partyType;
+      }
       const response = await apiClient.get(config.api.returnsReportExport, {
-        params: { from_date: from, to_date: to },
+        params,
         responseType: 'blob'
       });
 
@@ -86,6 +93,19 @@ const ReturnReport = () => {
                 className="date-input"
               />
             </div>
+            <div className="form-group">
+              <label>Party Type</label>
+              <select
+                value={partyType}
+                onChange={(e) => setPartyType(e.target.value)}
+                className="date-input"
+                style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
+              >
+                <option value="">All</option>
+                <option value="seller">Return from Seller</option>
+                <option value="buyer">Return from Buyer</option>
+              </select>
+            </div>
             <button onClick={fetchReport} className="btn btn-primary">
               Refresh
             </button>
@@ -116,6 +136,7 @@ const ReturnReport = () => {
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Party Type</th>
                   <th>Party Name</th>
                   <th>Product Name</th>
                   <th>Brand</th>
@@ -127,12 +148,24 @@ const ReturnReport = () => {
               <tbody>
                 {transactions.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ textAlign: 'center' }}>No returns found</td>
+                    <td colSpan="8" style={{ textAlign: 'center' }}>No returns found</td>
                   </tr>
                 ) : (
                   transactions.map((txn) => (
                     <tr key={txn.id}>
                       <td>{new Date(txn.return_date).toLocaleDateString()}</td>
+                      <td>
+                        <span style={{
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          backgroundColor: txn.party_type === 'buyer' ? '#e3f2fd' : '#fff3e0',
+                          color: txn.party_type === 'buyer' ? '#1976d2' : '#e65100',
+                          fontWeight: 'bold',
+                          fontSize: '12px'
+                        }}>
+                          {txn.party_type === 'buyer' ? 'Buyer' : 'Seller'}
+                        </span>
+                      </td>
                       <td>{txn.party_name}</td>
                       <td>{txn.product_name}</td>
                       <td>{txn.brand}</td>

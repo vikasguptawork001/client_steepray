@@ -81,17 +81,14 @@ const OrderSheet = () => {
                   <th>Product Name</th>
                   <th>Product Code</th>
                   <th>Brand</th>
-                  <th>Current Quantity</th>
-                  <th>Required Quantity</th>
-                  <th>Rack Number</th>
-                  <th>Sale Rate</th>
+                  <th>Quantity</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {orders.length === 0 ? (
                   <tr>
-                    <td colSpan="9" style={{ textAlign: 'center' }}>
+                    <td colSpan="6" style={{ textAlign: 'center' }}>
                       No pending orders
                     </td>
                   </tr>
@@ -100,16 +97,13 @@ const OrderSheet = () => {
                     <tr key={order.id}>
                       <td>{index + 1}</td>
                       <td>{order.product_name}</td>
-                      <td>{order.product_code}</td>
-                      <td>{order.brand}</td>
+                      <td>{order.product_code || 'N/A'}</td>
+                      <td>{order.brand || 'N/A'}</td>
                       <td>
                         <span className={`quantity-badge ${order.current_quantity <= order.required_quantity ? 'low' : ''}`}>
-                          {order.current_quantity}
+                          {order.current_quantity} / {order.required_quantity}
                         </span>
                       </td>
-                      <td>{order.required_quantity}</td>
-                      <td>{order.rack_number}</td>
-                      <td>₹{order.sale_rate}</td>
                       <td>
                         <button
                           onClick={() => markAsCompleted(order.id)}
