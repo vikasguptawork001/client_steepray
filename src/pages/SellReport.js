@@ -17,10 +17,14 @@ const SellReport = () => {
   const [gstFilter, setGstFilter] = useState('all'); // 'all', 'with_gst', 'without_gst'
   const [selectedBill, setSelectedBill] = useState(null);
   const [showBillModal, setShowBillModal] = useState(false);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [pagination, setPagination] = useState(null);
 
   useEffect(() => {
     fetchReport();
-  }, [fromDate, toDate, gstFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromDate, toDate, gstFilter, page, limit]);
 
   const fetchReport = async () => {
     try {
@@ -28,10 +32,11 @@ const SellReport = () => {
       const from = fromDate.toISOString().split('T')[0];
       const to = toDate.toISOString().split('T')[0];
       const response = await apiClient.get(config.api.salesReport, {
-        params: { from_date: from, to_date: to, gst_filter: gstFilter }
+        params: { from_date: from, to_date: to, gst_filter: gstFilter, page, limit }
       });
       setTransactions(response.data.transactions);
       setSummary(response.data.summary);
+      setPagination(response.data.pagination);
     } catch (error) {
       console.error('Error fetching report:', error);
     } finally {
@@ -103,9 +108,22 @@ const SellReport = () => {
                 <option value="without_gst">Without GST</option>
               </select>
             </div>
-            <button onClick={fetchReport} className="btn btn-primary">
+            <button onClick={() => { setPage(1); fetchReport(); }} className="btn btn-primary">
               Refresh
             </button>
+            <div className="form-group">
+              <label>Records per page</label>
+              <select
+                value={limit}
+                onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                className="date-input"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -210,6 +228,27 @@ const SellReport = () => {
                 )}
               </tbody>
             </table>
+            {pagination && pagination.totalPages > 1 && (
+              <div className="pagination" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
+                <button 
+                  onClick={() => setPage(p => Math.max(1, p - 1))} 
+                  disabled={page === 1}
+                  className="btn btn-secondary"
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {pagination.page} of {pagination.totalPages} ({pagination.totalRecords} total records)
+                </span>
+                <button 
+                  onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} 
+                  disabled={page === pagination.totalPages}
+                  className="btn btn-secondary"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
 

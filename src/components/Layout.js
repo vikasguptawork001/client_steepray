@@ -19,9 +19,11 @@ const Layout = ({ children }) => {
     { path: '/add-item', label: 'Add Item', roles: ['admin', 'super_admin'] },
     { path: '/sell-item', label: 'Sell Item' },
     { path: '/return-item', label: 'Return Item' },
+    { path: '/parties', label: 'Parties' },
     { path: '/add-buyer-party', label: 'Add Buyer Party', roles: ['admin', 'super_admin'] },
     { path: '/add-seller-party', label: 'Add Seller Party', roles: ['admin', 'super_admin'] },
     { path: '/sell-report', label: 'Sell Report' },
+    { path: '/sell-report-items', label: 'Item-wise Sell Report' },
     { path: '/return-report', label: 'Return Report' },
     { path: '/order-sheet', label: 'Order Sheet' }
   ];

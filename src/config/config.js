@@ -34,6 +34,8 @@ const config = {
     // Reports endpoints
     salesReport: '/api/reports/sales',
     salesReportExport: '/api/reports/sales/export',
+    itemWiseSalesReport: '/api/reports/sales/items',
+    itemWiseSalesReportExport: '/api/reports/sales/items/export',
     returnsReport: '/api/reports/returns',
     returnsReportExport: '/api/reports/returns/export',
     

@@ -3,7 +3,6 @@ import { useDispatch, useSelector } from 'react-redux';
 import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
-import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import {
@@ -21,7 +20,6 @@ import {
   addItemToCart,
   updateItemQuantity,
   removeItem,
-  updateItemDiscount,
   setPaymentStatus,
   setPaidAmount,
   setWithGst,
@@ -34,12 +32,11 @@ import {
   updatePreviewItemQuantity,
   removePreviewItem,
   updatePreviewItemDiscount,
-  updatePreviewPaymentInfo
+  resetSellItem
 } from '../store/slices/sellItemSlice';
 import './SellItem.css';
 
 const SellItem = () => {
-  const { user } = useAuth();
   const toast = useToast();
   const dispatch = useDispatch();
   
@@ -91,6 +88,34 @@ const SellItem = () => {
     }
   }, [searchQuery, dispatch]);
 
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showSellerSuggestions && !event.target.closest('.search-wrapper')) {
+        dispatch(setShowSellerSuggestions(false));
+      }
+    };
+
+    const handleEscapeKey = (event) => {
+      if (event.key === 'Escape') {
+        if (showSellerSuggestions) {
+          dispatch(setShowSellerSuggestions(false));
+        }
+        if (suggestedItems.length > 0) {
+          dispatch(clearSuggestedItems());
+          dispatch(setSearchQuery(''));
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscapeKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [showSellerSuggestions, suggestedItems.length, dispatch]);
+
   const handleAddItemToCart = async (item) => {
     try {
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
@@ -129,7 +154,12 @@ const SellItem = () => {
     }, 0);
   };
 
-  const handlePreview = async (overrideWithGst = null) => {
+  /**
+   * Recalculate preview bill.
+   * IMPORTANT: Many UI handlers dispatch Redux updates and then immediately call this.
+   * Redux state updates are async, so we accept override values to avoid using stale state.
+   */
+  const handlePreview = async (overrideWithGst = null, overrides = {}) => {
     // Validation checks
     if (!selectedSeller) {
       toast.warning('⚠️ Please select a seller party first');
@@ -185,6 +215,13 @@ const SellItem = () => {
     }
 
     const currentWithGst = overrideWithGst !== null ? overrideWithGst : withGst;
+    const effectivePayPreviousBalance =
+      overrides.payPreviousBalance !== undefined ? overrides.payPreviousBalance : payPreviousBalance;
+    const effectivePreviousBalancePaid =
+      overrides.previousBalancePaid !== undefined ? overrides.previousBalancePaid : previousBalancePaid;
+    const effectivePaymentStatus =
+      overrides.paymentStatus !== undefined ? overrides.paymentStatus : paymentStatus;
+    const effectivePaidAmount = overrides.paidAmount !== undefined ? overrides.paidAmount : paidAmount;
     
     // Preserve discount values from previewData if it exists
     const itemsToProcess = previewData && previewData.items ? previewData.items.map(pItem => {
@@ -201,14 +238,14 @@ const SellItem = () => {
     }).filter(Boolean) : selectedItems;
 
     try {
-      const result = await dispatch(calculatePreview({
+      await dispatch(calculatePreview({
         selectedItems: itemsToProcess,
         sellerInfo: currentSellerInfo,
         withGst: currentWithGst,
-        payPreviousBalance,
-        previousBalancePaid,
-        paymentStatus,
-        paidAmount
+        payPreviousBalance: effectivePayPreviousBalance,
+        previousBalancePaid: effectivePreviousBalancePaid,
+        paymentStatus: effectivePaymentStatus,
+        paidAmount: effectivePaidAmount
       })).unwrap();
       
       if (overrideWithGst !== null) {
@@ -226,6 +263,12 @@ const SellItem = () => {
     if (!previewData) {
       toast.warning('⚠️ Please generate bill preview first');
       handlePreview();
+      return;
+    }
+
+    // Prevent double submission with multiple checks
+    if (loading.submit || actionInProgress) {
+      toast.warning('⏳ Transaction is already being processed...');
       return;
     }
 
@@ -276,12 +319,6 @@ const SellItem = () => {
         }
       }
 
-      // Prevent double submission
-      if (loading.submit) {
-        toast.warning('⏳ Transaction is already being processed...');
-        return;
-      }
-
       toast.info('⏳ Processing your sale transaction...');
       const result = await dispatch(submitSale({ previewData, selectedSeller })).unwrap();
       
@@ -323,6 +360,12 @@ const SellItem = () => {
     }
     
     const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      toast.error('❌ Unable to open print window. Please check your popup blocker settings.');
+      dispatch(setPrintClicked(false));
+      return;
+    }
+    
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
@@ -470,8 +513,17 @@ const SellItem = () => {
     `);
     printWindow.document.close();
     printWindow.focus();
+    
+    // Wait for content to load before printing
     setTimeout(() => {
-      printWindow.print();
+      try {
+        printWindow.print();
+        toast.success('✅ Print dialog opened');
+      } catch (printError) {
+        console.error('Print error:', printError);
+        toast.error('❌ Failed to open print dialog');
+        dispatch(setPrintClicked(false));
+      }
       // Keep print disabled after clicking
     }, 250);
   };
@@ -484,13 +536,19 @@ const SellItem = () => {
     try {
       toast.info('📥 Preparing PDF download...');
       const response = await apiClient.get(config.api.billPdf(previewData.transactionId), {
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: 30000 // 30 second timeout
       });
       
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      if (!response.data || response.data.size === 0) {
+        toast.error('❌ Received empty PDF file');
+        return;
+      }
+      
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `bill_${previewData.transactionId}.pdf`);
+      link.setAttribute('download', `bill_${previewData.billNumber || previewData.transactionId}_${new Date().toISOString().split('T')[0]}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -498,7 +556,8 @@ const SellItem = () => {
       toast.success('✅ PDF downloaded successfully');
     } catch (error) {
       console.error('Error downloading PDF:', error);
-      toast.error('❌ Error downloading PDF: ' + (error.response?.data?.error || 'Unknown error'));
+      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+      toast.error('❌ Error downloading PDF: ' + errorMsg);
     }
   };
 
@@ -547,8 +606,20 @@ const SellItem = () => {
 
   const handleNewSaleClick = () => {
     if (actionInProgress) return;
-    dispatch(resetAfterSale());
+
+    // "Soft refresh" – reset state without reloading the page
+    // This clears any old preview/payment/cart/seller selection and brings the UI back to initial state.
+    dispatch(resetSellItem());
     dispatch(clearPreview());
+    dispatch(fetchSellerParties());
+
+    // Reset local UI flags
+    setActionInProgress(false);
+
+    // Nice UX: jump to top so user starts from seller selection again
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+
+    toast.info('✨ Ready for new sale');
   };
 
   const handlePrintClick = () => {
@@ -783,7 +854,6 @@ const SellItem = () => {
                   const isOverStock = quantity > availableQty;
                   const saleRate = parseFloat(item.sale_rate) || 0;
                   const itemTotal = saleRate * quantity;
-                  const itemAmount = previewData.withGst ? (parseFloat(item.itemTotalAfterDiscount || itemTotal) || 0) : (parseFloat(item.itemTotalAfterDiscount || itemTotal) || 0);
                   return (
                     <tr key={item.item_id} style={isOverStock ? { backgroundColor: '#ffebee' } : {}}>
                       <td>{index + 1}</td>
@@ -867,15 +937,27 @@ const SellItem = () => {
                                     if (val !== '' && !/^[\d.]*$/.test(val)) {
                                       return;
                                     }
+                                    // Prevent multiple decimal points
+                                    if ((val.match(/\./g) || []).length > 1) {
+                                      return;
+                                    }
                                     // Update discount immediately to preserve input value
                                     if (item.discount_type === 'percentage') {
                                       const numVal = val === '' ? null : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? null : parseFloat(val)));
+                                      // Validate percentage doesn't exceed 100
+                                      if (numVal !== null && numVal > 100) {
+                                        return;
+                                      }
                                       dispatch(updatePreviewItemDiscount({
                                         itemId: item.item_id,
                                         discountPercentage: numVal
                                       }));
                                     } else {
                                       const numVal = val === '' ? 0 : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? 0 : parseFloat(val)));
+                                      // Validate amount doesn't exceed item total
+                                      if (numVal > (item.itemTotal || 0)) {
+                                        return;
+                                      }
                                       dispatch(updatePreviewItemDiscount({
                                         itemId: item.item_id,
                                         discount: numVal
@@ -957,15 +1039,27 @@ const SellItem = () => {
                                     if (val !== '' && !/^[\d.]*$/.test(val)) {
                                       return;
                                     }
+                                    // Prevent multiple decimal points
+                                    if ((val.match(/\./g) || []).length > 1) {
+                                      return;
+                                    }
                                     // Update discount immediately to preserve input value
                                     if (item.discount_type === 'percentage') {
                                       const numVal = val === '' ? null : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? null : parseFloat(val)));
+                                      // Validate percentage doesn't exceed 100
+                                      if (numVal !== null && numVal > 100) {
+                                        return;
+                                      }
                                       dispatch(updatePreviewItemDiscount({
                                         itemId: item.item_id,
                                         discountPercentage: numVal
                                       }));
                                     } else {
                                       const numVal = val === '' ? 0 : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? 0 : parseFloat(val)));
+                                      // Validate amount doesn't exceed item total
+                                      if (numVal > (item.itemTotal || 0)) {
+                                        return;
+                                      }
                                       dispatch(updatePreviewItemDiscount({
                                         itemId: item.item_id,
                                         discount: numVal
@@ -1038,7 +1132,7 @@ const SellItem = () => {
                   </tr>
                 ) : (
                   <tr style={{ borderTop: '2px solid #2c3e50' }}>
-                    <td colSpan="4" style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#2c3e50' }}>
+                    <td colSpan={4} style={{ textAlign: 'right', padding: '12px', fontWeight: '600', color: '#2c3e50' }}>
                       Subtotal:
                     </td>
                     <td style={{ padding: '12px', fontWeight: '600', fontSize: '15px', color: '#2c3e50' }}>
@@ -1074,7 +1168,7 @@ const SellItem = () => {
 
                 {/* Previous Balance Paid Row */}
                 {(previewData.previousBalancePaid || 0) > 0 && (
-                  <tr style={{ backgroundColor: '#d4edda' }}>
+                  <tr>
                     <td colSpan={previewData.withGst ? 6 : 5} style={{ textAlign: 'right', padding: '10px', fontWeight: '600', color: '#155724' }}>
                       Previous Balance Paid:
                     </td>
@@ -1228,14 +1322,18 @@ const SellItem = () => {
                           try {
                             const isChecked = e.target.checked;
                             const currentBalance = parseFloat((sellerInfo?.balance_amount || previewData.seller?.balance_amount || 0));
+                            const nextPrevPaid = isChecked ? currentBalance : 0;
                             
                             dispatch(setPayPreviousBalance(isChecked));
                             if (isChecked) {
-                              dispatch(setPreviousBalancePaid(currentBalance));
+                              dispatch(setPreviousBalancePaid(nextPrevPaid));
                             } else {
                               dispatch(setPreviousBalancePaid(0));
                             }
-                            await handlePreview();
+                            await handlePreview(null, {
+                              payPreviousBalance: isChecked,
+                              previousBalancePaid: nextPrevPaid
+                            });
                           } finally {
                             setActionInProgress(false);
                           }
@@ -1273,14 +1371,12 @@ const SellItem = () => {
                             const val = e.target.value;
                             if (val === '') {
                               dispatch(setPreviousBalancePaid(0));
-                              dispatch(updatePreviewPaymentInfo({ previousBalancePaid: 0 }));
                               return;
                             }
                             const amount = parseFloat(val) || 0;
                             const maxAmount = parseFloat((sellerInfo?.balance_amount || previewData.seller?.balance_amount || 0));
                             const finalAmount = Math.min(Math.max(0, amount), maxAmount);
                             dispatch(setPreviousBalancePaid(finalAmount));
-                            dispatch(updatePreviewPaymentInfo({ previousBalancePaid: finalAmount }));
                           }}
                           onBlur={async (e) => {
                             if (actionInProgress) return;
@@ -1291,7 +1387,10 @@ const SellItem = () => {
                               const maxAmount = parseFloat((sellerInfo?.balance_amount || previewData.seller?.balance_amount || 0));
                               const finalAmount = Math.min(Math.max(0, amount), maxAmount);
                               dispatch(setPreviousBalancePaid(finalAmount));
-                              await handlePreview();
+                              await handlePreview(null, {
+                                payPreviousBalance: true,
+                                previousBalancePaid: finalAmount
+                              });
                             } finally {
                               setActionInProgress(false);
                             }
@@ -1360,7 +1459,7 @@ const SellItem = () => {
                           try {
                             const newStatus = e.target.value;
                             dispatch(setPaymentStatus(newStatus));
-                            await handlePreview();
+                            await handlePreview(null, { paymentStatus: newStatus });
                           } finally {
                             setActionInProgress(false);
                           }
@@ -1390,11 +1489,22 @@ const SellItem = () => {
                         type="radio"
                         value="partially_paid"
                         checked={paymentStatus === 'partially_paid'}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           if (actionInProgress) return;
-                          const newStatus = e.target.value;
-                          dispatch(setPaymentStatus(newStatus));
-                          dispatch(updatePreviewPaymentInfo({ paymentStatus: newStatus }));
+                          setActionInProgress(true);
+                          try {
+                            const newStatus = e.target.value;
+                            const currentGrand = (previewData.grandTotal || previewData.total) || 0;
+                            const nextPaidAmount = (paidAmount === currentGrand) ? 0 : paidAmount;
+                            dispatch(setPaymentStatus(newStatus));
+                            // Initialize paidAmount to 0 when switching to partially_paid
+                            if (paidAmount === currentGrand) {
+                              dispatch(setPaidAmount(0));
+                            }
+                            await handlePreview(null, { paymentStatus: newStatus, paidAmount: nextPaidAmount });
+                          } finally {
+                            setActionInProgress(false);
+                          }
                         }}
                         disabled={actionInProgress}
                         style={{ marginRight: '10px' }}
@@ -1429,14 +1539,12 @@ const SellItem = () => {
                           const val = e.target.value;
                           if (val === '') {
                             dispatch(setPaidAmount(0));
-                            dispatch(updatePreviewPaymentInfo({ paidAmount: 0 }));
                             return;
                           }
                           const amount = parseFloat(val) || 0;
                           const maxAmount = previewData.grandTotal || previewData.total || 0;
                           const finalAmount = Math.min(Math.max(0, amount), maxAmount);
                           dispatch(setPaidAmount(finalAmount));
-                          dispatch(updatePreviewPaymentInfo({ paidAmount: finalAmount }));
                         }}
                         onBlur={async (e) => {
                           if (actionInProgress) return;
@@ -1447,7 +1555,10 @@ const SellItem = () => {
                             const maxAmount = previewData.grandTotal || previewData.total || 0;
                             const finalAmount = Math.min(Math.max(0, amount), maxAmount);
                             dispatch(setPaidAmount(finalAmount));
-                            await handlePreview();
+                            await handlePreview(null, {
+                              paymentStatus: 'partially_paid',
+                              paidAmount: finalAmount
+                            });
                           } finally {
                             setActionInProgress(false);
                           }

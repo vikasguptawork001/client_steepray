@@ -8,7 +8,9 @@ import AddItem from './pages/AddItem';
 import SellItem from './pages/SellItem';
 import AddBuyerParty from './pages/AddBuyerParty';
 import AddSellerParty from './pages/AddSellerParty';
+import Parties from './pages/Parties';
 import SellReport from './pages/SellReport';
+import ItemWiseSellReport from './pages/ItemWiseSellReport';
 import ReturnReport from './pages/ReturnReport';
 import ReturnItem from './pages/ReturnItem';
 import OrderSheet from './pages/OrderSheet';
@@ -75,10 +77,26 @@ function App() {
             }
           />
           <Route
+            path="/parties"
+            element={
+              <PrivateRoute>
+                <Parties />
+              </PrivateRoute>
+            }
+          />
+          <Route
             path="/sell-report"
             element={
               <PrivateRoute>
                 <SellReport />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/sell-report-items"
+            element={
+              <PrivateRoute>
+                <ItemWiseSellReport />
               </PrivateRoute>
             }
           />
