@@ -343,189 +343,74 @@ const SellItem = () => {
     }
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (printDisabled || printClicked) {
       toast.warning('⚠️ Please confirm the sale first to enable printing');
       return;
     }
+    
+    if (!previewData || !previewData.transactionId) {
+      toast.warning('⚠️ Please complete the sale first to print PDF');
+      return;
+    }
+    
     dispatch(setPrintClicked(true));
-    toast.info('🖨️ Preparing print preview...');
+    toast.info('🖨️ Preparing PDF for printing...');
     
-    // Create a print-friendly window with proper template
-    const printContent = document.getElementById('bill-print-content');
-    if (!printContent) {
-      toast.error('❌ Print content not found');
-      dispatch(setPrintClicked(false));
-      return;
-    }
-    
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-    if (!printWindow) {
-      toast.error('❌ Unable to open print window. Please check your popup blocker settings.');
-      dispatch(setPrintClicked(false));
-      return;
-    }
-    
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Invoice - Steepray Info Solutions</title>
-          <style>
-            @media print {
-              @page {
-                size: A4;
-                margin: 20mm;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-              }
-            }
-            body {
-              font-family: Arial, sans-serif;
-              margin: 0;
-              padding: 20px;
-              color: #333;
-            }
-            .print-header {
-              text-align: center;
-              border-bottom: 3px solid #333;
-              padding-bottom: 20px;
-              margin-bottom: 30px;
-            }
-            .print-header h1 {
-              margin: 0;
-              font-size: 28px;
-              color: #2c3e50;
-              font-weight: bold;
-            }
-            .print-header h2 {
-              margin: 10px 0 0 0;
-              font-size: 22px;
-              color: #34495e;
-            }
-            .print-header p {
-              margin: 5px 0;
-              font-size: 14px;
-              color: #7f8c8d;
-            }
-            .bill-info {
-              display: flex;
-              justify-content: space-between;
-              margin-bottom: 30px;
-            }
-            .bill-info-left, .bill-info-right {
-              flex: 1;
-            }
-            .bill-info-right {
-              text-align: right;
-            }
-            .party-info {
-              margin-bottom: 30px;
-              padding: 15px;
-              background-color: #f8f9fa;
-              border-radius: 5px;
-            }
-            .party-info h3 {
-              margin: 0 0 10px 0;
-              font-size: 16px;
-              color: #2c3e50;
-            }
-            .party-info p {
-              margin: 5px 0;
-              font-size: 14px;
-            }
-            .previous-balance {
-              font-weight: bold;
-              color: #e65100;
-              margin-top: 10px;
-              padding-top: 10px;
-              border-top: 1px solid #ddd;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 30px;
-            }
-            table th {
-              background-color: #34495e;
-              color: white;
-              padding: 12px;
-              text-align: left;
-              font-weight: bold;
-            }
-            table td {
-              padding: 10px;
-              border-bottom: 1px solid #ddd;
-            }
-            table tbody tr:hover {
-              background-color: #f5f5f5;
-            }
-            table tfoot {
-              border-top: 2px solid #333;
-            }
-            table tfoot td {
-              font-weight: bold;
-              padding: 15px 10px;
-            }
-            .total-row {
-              font-size: 16px;
-            }
-            .payment-info {
-              margin-top: 30px;
-              padding: 20px;
-              background-color: #ecf0f1;
-              border-radius: 5px;
-            }
-            .payment-info h3 {
-              margin: 0 0 15px 0;
-              font-size: 18px;
-              color: #2c3e50;
-            }
-            .payment-row {
-              display: flex;
-              justify-content: space-between;
-              padding: 8px 0;
-              font-size: 14px;
-            }
-            .payment-row.total {
-              font-size: 18px;
-              font-weight: bold;
-              border-top: 2px solid #2c3e50;
-              padding-top: 15px;
-              margin-top: 10px;
-            }
-            .footer {
-              margin-top: 50px;
-              text-align: center;
-              padding-top: 20px;
-              border-top: 1px solid #ddd;
-              color: #7f8c8d;
-              font-size: 12px;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    
-    // Wait for content to load before printing
-    setTimeout(() => {
-      try {
-        printWindow.print();
-        toast.success('✅ Print dialog opened');
-      } catch (printError) {
-        console.error('Print error:', printError);
-        toast.error('❌ Failed to open print dialog');
+    try {
+      // Fetch the PDF from the same endpoint used for download
+      const response = await apiClient.get(config.api.billPdf(previewData.transactionId), {
+        responseType: 'blob',
+        timeout: 30000 // 30 second timeout
+      });
+      
+      if (!response.data || response.data.size === 0) {
+        toast.error('❌ Received empty PDF file');
         dispatch(setPrintClicked(false));
+        return;
       }
-      // Keep print disabled after clicking
-    }, 250);
+      
+      // Create a blob URL for the PDF
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      
+      // Open the PDF in a new window
+      const printWindow = window.open(url, '_blank');
+      if (!printWindow) {
+        toast.error('❌ Unable to open print window. Please check your popup blocker settings.');
+        window.URL.revokeObjectURL(url);
+        dispatch(setPrintClicked(false));
+        return;
+      }
+      
+      // Wait for the PDF to load, then trigger print
+      // Note: PDFs may take a moment to render in the browser
+      const attemptPrint = () => {
+        try {
+          printWindow.focus();
+          printWindow.print();
+          toast.success('✅ Print dialog opened');
+          // Clean up the URL after a delay
+          setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+          }, 2000);
+        } catch (printError) {
+          console.error('Print error:', printError);
+          // If print() fails, the PDF is still open and user can print manually
+          toast.info('📄 PDF opened in new window. Please use the browser\'s print button.');
+          window.URL.revokeObjectURL(url);
+          dispatch(setPrintClicked(false));
+        }
+      };
+      
+      // Try printing after a short delay to allow PDF to load
+      setTimeout(attemptPrint, 1000);
+      
+    } catch (error) {
+      console.error('Error fetching PDF for print:', error);
+      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+      toast.error('❌ Error loading PDF for printing: ' + errorMsg);
+      dispatch(setPrintClicked(false));
+    }
   };
 
   const handleDownloadPDF = async () => {
@@ -821,30 +706,30 @@ const SellItem = () => {
             </div>
 
             <table className="table">
-              <thead>
+              <thead style={{ backgroundColor: '#34495e', color: 'white' }}>
                 <tr>
-                  <th>S.No</th>
-                  <th>Product Name</th>
-                  {previewData.withGst && <th>HSN</th>}
-                  <th>Quantity</th>
-                  <th>Rate</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>S.No</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Product Name</th>
+                  {previewData.withGst && <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>HSN</th>}
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Quantity</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Rate</th>
                   {previewData.withGst ? (
                     <>
-                      <th>Rate (After Discount)</th>
-                      <th>Taxable Value</th>
-                      <th>GST%</th>
-                      <th>GST Value</th>
-                      <th>Discount</th>
-                      <th>Amount</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Rate (After Discount)</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Taxable Value</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>GST%</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>GST Value</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Discount</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Amount</th>
                     </>
                   ) : (
                     <>
-                      <th>Rate (After Discount)</th>
-                      <th>Discount</th>
-                      <th>Amount</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Rate (After Discount)</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Discount</th>
+                      <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Amount</th>
                     </>
                   )}
-                  <th>Action</th>
+                  <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -1920,13 +1805,13 @@ const SellItem = () => {
             <div className="selected-items">
               <h3>Selected Items</h3>
               <table className="table">
-                <thead>
+                <thead style={{ backgroundColor: '#34495e', color: 'white' }}>
                   <tr>
-                    <th>Product Name</th>
-                    <th>Sale Rate</th>
-                    <th>Quantity</th>
-                    <th>Total</th>
-                    <th>Action</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Product Name</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Sale Rate</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Quantity</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Total</th>
+                    <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -34,6 +34,8 @@ const AddItem = () => {
     remarks: ''
   });
   const [itemImage, setItemImage] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAddingNewItem, setIsAddingNewItem] = useState(false);
 
   useEffect(() => {
     // Check if user has permission to add items
@@ -119,6 +121,17 @@ const AddItem = () => {
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
       const fullItemData = response.data.item;
       
+      // Parse tax_rate to ensure it's a number (backend might send it as string)
+      const taxRateValue = fullItemData.tax_rate !== undefined && fullItemData.tax_rate !== null
+        ? parseFloat(fullItemData.tax_rate)
+        : 18;
+      const validTaxRates = [5, 18, 28];
+      const finalTaxRate = !isNaN(taxRateValue) && validTaxRates.includes(taxRateValue) 
+        ? taxRateValue 
+        : 18;
+      
+      console.log('addItemToCart - tax_rate from backend:', fullItemData.tax_rate, 'Type:', typeof fullItemData.tax_rate, 'Parsed:', taxRateValue, 'Final:', finalTaxRate);
+      
       const existingItem = selectedItems.find(i => i.item_id === item.id);
       if (existingItem) {
         // If item already in cart, just increment quantity
@@ -133,7 +146,7 @@ const AddItem = () => {
           product_code: fullItemData.product_code || '',
           brand: fullItemData.brand || '',
           hsn_number: fullItemData.hsn_number || '',
-          tax_rate: fullItemData.tax_rate && [5, 18, 28].includes(fullItemData.tax_rate) ? fullItemData.tax_rate : 18,
+          tax_rate: finalTaxRate, // Use the parsed and validated tax rate
           sale_rate: fullItemData.sale_rate,
           purchase_rate: fullItemData.purchase_rate || 0,
           quantity: 1, // Only this field will be editable
@@ -162,6 +175,8 @@ const AddItem = () => {
   };
 
   const handleAddNewItem = async () => {
+    if (isAddingNewItem || isSubmitting) return;
+    
     // Validation
     if (!newItem.product_name || newItem.product_name.trim() === '') {
       toast.error('Product name is required');
@@ -184,15 +199,34 @@ const AddItem = () => {
       return;
     }
 
+    setIsAddingNewItem(true);
     try {
       // Create FormData for image upload
       const formData = new FormData();
+      
+      // Ensure tax_rate is explicitly handled - it should be a number (5, 18, or 28)
+      const taxRateValue = newItem.tax_rate;
+      const validTaxRates = [5, 18, 28];
+      const finalTaxRate = validTaxRates.includes(taxRateValue) ? taxRateValue : 18;
+      
       Object.keys(newItem).forEach(key => {
-        formData.append(key, newItem[key]);
+        if (key === 'tax_rate') {
+          // Explicitly set tax_rate value
+          formData.append(key, finalTaxRate.toString());
+        } else if (key === 'sale_rate' || key === 'purchase_rate' || key === 'alert_quantity') {
+          // Ensure numeric fields are sent as numbers
+          const numValue = parseFloat(newItem[key]);
+          formData.append(key, isNaN(numValue) ? '0' : numValue.toString());
+        } else {
+          formData.append(key, newItem[key] || '');
+        }
       });
       if (itemImage) {
         formData.append('image', itemImage);
       }
+      
+      // Debug log to verify tax_rate is being sent correctly
+      console.log('Sending tax_rate:', finalTaxRate, 'Original value:', taxRateValue);
 
       const response = await apiClient.post(config.api.items, formData, {
         headers: {
@@ -225,10 +259,14 @@ const AddItem = () => {
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Unknown error occurred';
       toast.error('Error adding item: ' + errorMessage);
+    } finally {
+      setIsAddingNewItem(false);
     }
   };
 
   const handleSubmit = async () => {
+    if (isSubmitting || isAddingNewItem) return;
+    
     if (!selectedBuyer) {
       alert('Please select a buyer party');
       return;
@@ -238,6 +276,7 @@ const AddItem = () => {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       await apiClient.post(config.api.itemsPurchase, {
         buyer_party_id: selectedBuyer,
@@ -250,6 +289,8 @@ const AddItem = () => {
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Unknown error occurred';
       toast.error('Error saving items: ' + errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -346,7 +387,31 @@ const AddItem = () => {
           )}
 
           <div className="form-group">
-            <label>Search Item</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <label style={{ margin: 0 }}>Search Item</label>
+              <button
+                type="button"
+                onClick={() => setShowAddItemForm(!showAddItemForm)}
+                className="btn btn-primary"
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: showAddItemForm ? '#95a5a6' : '#3498db',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <span>+</span>
+                {showAddItemForm ? 'Hide Add Item Form' : 'Add New Item'}
+              </button>
+            </div>
             <div className="search-wrapper">
               <input
                 type="text"
@@ -430,13 +495,20 @@ const AddItem = () => {
                   <select
                     value={newItem.tax_rate}
                     onChange={(e) => {
-                      setNewItem({ ...newItem, tax_rate: parseFloat(e.target.value) || 18 });
+                      const selectedTaxRate = parseFloat(e.target.value);
+                      const validTaxRates = [5, 18, 28];
+                      const finalTaxRate = validTaxRates.includes(selectedTaxRate) ? selectedTaxRate : 18;
+                      console.log('Tax rate changed:', e.target.value, 'Parsed:', selectedTaxRate, 'Final:', finalTaxRate);
+                      setNewItem({ ...newItem, tax_rate: finalTaxRate });
                     }}
                   >
                     <option value="5">5%</option>
                     <option value="18">18%</option>
                     <option value="28">28%</option>
                   </select>
+                  <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                    Selected: {newItem.tax_rate}%
+                  </small>
                 </div>
                 <div className="form-group">
                   <label>Sale Rate *</label>
@@ -658,7 +730,17 @@ const AddItem = () => {
               )}
 
               <div className="form-actions">
-                <button onClick={handleAddNewItem} className="btn btn-primary">Add Product</button>
+                <button 
+                  onClick={handleAddNewItem} 
+                  className="btn btn-primary"
+                  disabled={isAddingNewItem || isSubmitting}
+                  style={{
+                    opacity: (isAddingNewItem || isSubmitting) ? 0.6 : 1,
+                    cursor: (isAddingNewItem || isSubmitting) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isAddingNewItem ? 'Adding...' : 'Add Product'}
+                </button>
                 <button onClick={() => {
                   setShowAddItemForm(false);
                   setNewItem({
@@ -766,8 +848,17 @@ const AddItem = () => {
                   ))}
                 </tbody>
               </table>
-              <button onClick={handleSubmit} className="btn btn-primary" style={{ marginTop: '20px' }}>
-                Save Items
+              <button 
+                onClick={handleSubmit} 
+                className="btn btn-primary" 
+                disabled={isSubmitting || isAddingNewItem}
+                style={{ 
+                  marginTop: '20px',
+                  opacity: (isSubmitting || isAddingNewItem) ? 0.6 : 1,
+                  cursor: (isSubmitting || isAddingNewItem) ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isSubmitting ? 'Saving...' : 'Save Items'}
               </button>
             </div>
           )}

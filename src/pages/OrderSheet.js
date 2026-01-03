@@ -10,6 +10,8 @@ const OrderSheet = () => {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [completingOrderId, setCompletingOrderId] = useState(null);
 
   useEffect(() => {
     fetchOrders();
@@ -32,6 +34,8 @@ const OrderSheet = () => {
   };
 
   const exportToExcel = async () => {
+    if (exporting) return;
+    setExporting(true);
     try {
       const response = await apiClient.get(config.api.ordersExport, {
         responseType: 'blob'
@@ -47,16 +51,22 @@ const OrderSheet = () => {
     } catch (error) {
       console.error('Error exporting order sheet:', error);
       alert('Error exporting order sheet');
+    } finally {
+      setExporting(false);
     }
   };
 
   const markAsCompleted = async (orderId) => {
+    if (completingOrderId) return;
+    setCompletingOrderId(orderId);
     try {
       await apiClient.put(`${config.api.orders}/${orderId}/complete`);
       fetchOrders();
       alert('Order marked as completed');
     } catch (error) {
       alert('Error: ' + (error.response?.data?.error || 'Unknown error'));
+    } finally {
+      setCompletingOrderId(null);
     }
   };
 
@@ -65,8 +75,16 @@ const OrderSheet = () => {
       <div className="order-sheet">
         <div className="order-header">
           <h2>Order Sheet</h2>
-          <button onClick={exportToExcel} className="btn btn-success">
-            Export to Excel
+          <button 
+            onClick={exportToExcel} 
+            className="btn btn-success"
+            disabled={exporting}
+            style={{
+              opacity: exporting ? 0.6 : 1,
+              cursor: exporting ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {exporting ? 'Exporting...' : 'Export to Excel'}
           </button>
         </div>
 
@@ -133,9 +151,14 @@ const OrderSheet = () => {
                         <button
                           onClick={() => markAsCompleted(order.id)}
                           className="btn btn-primary"
-                          style={{ padding: '5px 10px' }}
+                          disabled={completingOrderId !== null}
+                          style={{ 
+                            padding: '5px 10px',
+                            opacity: completingOrderId !== null ? 0.6 : 1,
+                            cursor: completingOrderId !== null ? 'not-allowed' : 'pointer'
+                          }}
                         >
-                          Mark Complete
+                          {completingOrderId === order.id ? 'Processing...' : 'Mark Complete'}
                         </button>
                       </td>
                     </tr>

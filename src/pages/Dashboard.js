@@ -145,16 +145,19 @@ const Dashboard = () => {
   const canDelete = user?.role === 'super_admin';
 
   const handleView = async (item) => {
+    if (updating || deleting || quickSaleLoading) return;
     try {
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
       setViewItem(response.data.item);
       setShowViewModal(true);
+      setActionDropdownOpen(null);
     } catch (error) {
       alert('Error fetching item details: ' + (error.response?.data?.error || 'Unknown error'));
     }
   };
 
   const handleQuickSale = (item) => {
+    if (updating || deleting || quickSaleLoading) return;
     setQuickSaleItem(item);
     setQuickSaleQuantity(1);
     setShowQuickSaleModal(true);
@@ -164,12 +167,15 @@ const Dashboard = () => {
   const handleQuickSaleSubmit = async () => {
     if (quickSaleLoading) return;
     
-    if (!quickSaleItem || quickSaleQuantity <= 0) {
+    // Parse quantity and validate
+    const qty = parseInt(quickSaleQuantity) || 0;
+    
+    if (!quickSaleItem || qty <= 0) {
       alert('Please enter a valid quantity');
       return;
     }
 
-    if (quickSaleQuantity > quickSaleItem.quantity) {
+    if (qty > quickSaleItem.quantity) {
       alert(`Insufficient stock. Available: ${quickSaleItem.quantity}`);
       return;
     }
@@ -185,11 +191,11 @@ const Dashboard = () => {
         seller_party_id: retailPartyId,
         items: [{
           item_id: quickSaleItem.id,
-          quantity: quickSaleQuantity,
+          quantity: qty,
           sale_rate: quickSaleItem.sale_rate
         }],
         payment_status: 'fully_paid',
-        paid_amount: quickSaleItem.sale_rate * quickSaleQuantity,
+        paid_amount: quickSaleItem.sale_rate * qty,
         discount: 0,
         with_gst: false
       });
@@ -209,6 +215,7 @@ const Dashboard = () => {
   };
 
   const handleEdit = (item) => {
+    if (updating || deleting || quickSaleLoading) return;
     setEditingItem(item);
     setEditFormData({
       product_name: item.product_name || '',
@@ -1030,8 +1037,29 @@ const Dashboard = () => {
                     max={quickSaleItem.quantity}
                     value={quickSaleQuantity}
                     onChange={(e) => {
-                      const qty = parseInt(e.target.value) || 1;
-                      if (qty >= 1 && qty <= quickSaleItem.quantity) {
+                      const val = e.target.value;
+                      // Allow empty string and intermediate states during typing
+                      if (val === '') {
+                        setQuickSaleQuantity('');
+                        return;
+                      }
+                      const qty = parseInt(val);
+                      // Allow any number during typing, we'll validate on blur
+                      if (!isNaN(qty) && qty >= 0) {
+                        // Clamp to max available quantity
+                        const finalQty = Math.min(qty, quickSaleItem.quantity);
+                        setQuickSaleQuantity(finalQty);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // Validate and set minimum value on blur
+                      const val = e.target.value;
+                      const qty = parseInt(val) || 0;
+                      if (qty < 1) {
+                        setQuickSaleQuantity(1);
+                      } else if (qty > quickSaleItem.quantity) {
+                        setQuickSaleQuantity(quickSaleItem.quantity);
+                      } else {
                         setQuickSaleQuantity(qty);
                       }
                     }}
@@ -1039,7 +1067,7 @@ const Dashboard = () => {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Total Amount: ₹{(quickSaleItem.sale_rate * quickSaleQuantity).toFixed(2)}</label>
+                  <label>Total Amount: ₹{((quickSaleItem.sale_rate || 0) * (parseInt(quickSaleQuantity) || 0)).toFixed(2)}</label>
                 </div>
                 <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '5px', marginTop: '10px' }}>
                   <strong>Note:</strong> This will be sold to the default "Retail Seller" party.

@@ -18,6 +18,7 @@ const AddBuyerParty = () => {
   });
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Validation functions
   const validateEmail = (email) => {
@@ -124,6 +125,7 @@ const AddBuyerParty = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     
     // Validate all fields
     const newErrors = {};
@@ -145,6 +147,7 @@ const AddBuyerParty = () => {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       await apiClient.post(config.api.buyers, formData);
       toast.success('Buyer party added successfully!');
@@ -172,6 +175,8 @@ const AddBuyerParty = () => {
       }
       
       toast.error('Error: ' + errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -455,7 +460,17 @@ const AddBuyerParty = () => {
                 rows="3"
               />
             </div>
-            <button type="submit" className="btn btn-primary">Add Buyer Party</button>
+            <button 
+              type="submit" 
+              className="btn btn-primary"
+              disabled={isSubmitting}
+              style={{
+                opacity: isSubmitting ? 0.6 : 1,
+                cursor: isSubmitting ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {isSubmitting ? 'Adding...' : 'Add Buyer Party'}
+            </button>
           </form>
         </div>
       </div>

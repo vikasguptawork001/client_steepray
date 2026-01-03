@@ -30,17 +30,32 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    // Handle 401 Unauthorized - redirect to login
-    if (error.response?.status === 401) {
+    // Handle authentication errors - redirect to login
+    const errorMessage = error.response?.data?.error || '';
+    const isAuthError = 
+      error.response?.status === 401 || 
+      errorMessage.toLowerCase().includes('invalid or expired token') ||
+      errorMessage.toLowerCase().includes('invalid token') ||
+      errorMessage.toLowerCase().includes('expired token') ||
+      errorMessage.toLowerCase().includes('unauthorized');
+    
+    if (isAuthError) {
+      // Clear authentication data
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      
+      // Redirect to login page
+      // Only redirect if not already on login page to avoid redirect loops
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
 );
 
 export default apiClient;
+
 
 
 

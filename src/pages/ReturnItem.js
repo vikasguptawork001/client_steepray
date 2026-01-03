@@ -23,6 +23,7 @@ const ReturnItem = () => {
   });
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     fetchSellerParties();
@@ -136,7 +137,10 @@ const ReturnItem = () => {
           brand: fullItemData.brand || '',
           sale_rate: parseFloat(fullItemData.sale_rate || 0),
           quantity: 1,
-          available_quantity: fullItemData.quantity || 0
+          available_quantity: fullItemData.quantity || 0,
+          discount: 0,
+          discount_type: 'amount',
+          discount_percentage: null
         }]);
       }
       setSearchQuery('');
@@ -169,8 +173,34 @@ const ReturnItem = () => {
     return selectedItems.reduce((sum, item) => {
       const saleRate = parseFloat(item.sale_rate) || 0;
       const quantity = parseInt(item.quantity) || 0;
-      return sum + (saleRate * quantity);
+      const itemTotal = saleRate * quantity;
+      
+      // Calculate discount
+      let itemDiscount = 0;
+      if (item.discount_type === 'percentage' && item.discount_percentage !== null && item.discount_percentage !== undefined) {
+        itemDiscount = (itemTotal * item.discount_percentage) / 100;
+      } else {
+        itemDiscount = parseFloat(item.discount || 0);
+      }
+      itemDiscount = Math.min(itemDiscount, itemTotal);
+      
+      return sum + (itemTotal - itemDiscount);
     }, 0);
+  };
+
+  const updateItemDiscount = (itemId, discount, discountType, discountPercentage) => {
+    setSelectedItems(selectedItems.map(item =>
+      item.item_id === itemId 
+        ? { 
+            ...item, 
+            discount: discount !== undefined ? discount : item.discount,
+            discount_type: discountType !== undefined ? discountType : item.discount_type,
+            discount_percentage: discountPercentage !== undefined ? discountPercentage : item.discount_percentage
+          }
+        : item
+    ));
+    setShowPreview(false);
+    setPreviewData(null);
   };
 
   const getValidItemsCount = () => {
@@ -178,6 +208,8 @@ const ReturnItem = () => {
   };
 
   const handlePreview = () => {
+    if (isProcessing) return;
+    
     if (!selectedParty) {
       toast.error(`Please select a ${partyType} party`);
       return;
@@ -206,19 +238,49 @@ const ReturnItem = () => {
     const totalAmount = validItems.reduce((sum, item) => {
       const saleRate = parseFloat(item.sale_rate) || 0;
       const quantity = parseInt(item.quantity) || 0;
-      return sum + (saleRate * quantity);
+      const itemTotal = saleRate * quantity;
+      
+      // Calculate discount
+      let itemDiscount = 0;
+      if (item.discount_type === 'percentage' && item.discount_percentage !== null && item.discount_percentage !== undefined) {
+        itemDiscount = (itemTotal * item.discount_percentage) / 100;
+      } else {
+        itemDiscount = parseFloat(item.discount || 0);
+      }
+      itemDiscount = Math.min(itemDiscount, itemTotal);
+      
+      return sum + (itemTotal - itemDiscount);
     }, 0);
     
-    const items = validItems.map(item => ({
-      item_id: item.item_id,
-      product_name: item.product_name,
-      brand: item.brand,
-      product_code: item.product_code,
-      sale_rate: item.sale_rate,
-      quantity: item.quantity,
-      return_amount: parseFloat(item.sale_rate || 0) * parseInt(item.quantity || 0),
-      available_quantity: item.available_quantity
-    }));
+    const items = validItems.map(item => {
+      const saleRate = parseFloat(item.sale_rate || 0);
+      const quantity = parseInt(item.quantity || 0);
+      const itemTotal = saleRate * quantity;
+      
+      // Calculate discount
+      let itemDiscount = 0;
+      if (item.discount_type === 'percentage' && item.discount_percentage !== null && item.discount_percentage !== undefined) {
+        itemDiscount = (itemTotal * item.discount_percentage) / 100;
+      } else {
+        itemDiscount = parseFloat(item.discount || 0);
+      }
+      itemDiscount = Math.min(itemDiscount, itemTotal);
+      const returnAmount = itemTotal - itemDiscount;
+      
+      return {
+        item_id: item.item_id,
+        product_name: item.product_name,
+        brand: item.brand,
+        product_code: item.product_code,
+        sale_rate: item.sale_rate,
+        quantity: item.quantity,
+        return_amount: returnAmount,
+        discount: itemDiscount,
+        discount_type: item.discount_type || 'amount',
+        discount_percentage: item.discount_percentage || null,
+        available_quantity: item.available_quantity
+      };
+    });
 
     const preview = {
       partyType,
@@ -241,17 +303,23 @@ const ReturnItem = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isProcessing) return;
+    
     if (!showPreview || !previewData) {
       toast.error('Please preview the return before submitting');
       return;
     }
 
+    setIsProcessing(true);
     try {
       const requestData = {
         items: previewData.items.map(item => ({
           item_id: item.item_id,
           quantity: item.quantity,
-          return_amount: item.return_amount
+          return_amount: item.return_amount,
+          discount: item.discount || 0,
+          discount_type: item.discount_type || 'amount',
+          discount_percentage: item.discount_percentage || null
         })),
         reason: returnData.reason,
         return_type: returnData.return_type,
@@ -282,6 +350,8 @@ const ReturnItem = () => {
       setPreviewData(null);
     } catch (error) {
       toast.error('Error: ' + (error.response?.data?.error || 'Unknown error'));
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -446,16 +516,17 @@ const ReturnItem = () => {
                 <h3>Items to Return</h3>
                 <div style={{ overflowX: 'auto' }}>
                   <table className="table" style={{ marginTop: '10px' }}>
-                    <thead>
+                    <thead style={{ backgroundColor: '#34495e', color: 'white' }}>
                       <tr>
-                        <th>S.No</th>
-                        <th>Product Name</th>
-                        <th>Brand</th>
-                        <th>Available Qty</th>
-                        <th>Sale Rate</th>
-                        <th>Return Qty</th>
-                        <th>Return Amount</th>
-                        <th>Action</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>S.No</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Product Name</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Brand</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Available Qty</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Sale Rate</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Return Qty</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Discount</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Return Amount</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -485,10 +556,92 @@ const ReturnItem = () => {
                             />
                           </td>
                           <td>
-                            {item.quantity > 0 
-                              ? `₹${(parseFloat(item.sale_rate || 0) * parseInt(item.quantity || 0)).toFixed(2)}`
-                              : <span style={{ color: '#999' }}>₹0.00</span>
-                            }
+                            {item.quantity > 0 ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                                <select
+                                  value={item.discount_type || 'amount'}
+                                  onChange={(e) => {
+                                    const newDiscountType = e.target.value;
+                                    updateItemDiscount(item.item_id, 
+                                      newDiscountType === 'amount' ? (item.discount || 0) : 0,
+                                      newDiscountType,
+                                      newDiscountType === 'percentage' ? (item.discount_percentage || null) : null
+                                    );
+                                  }}
+                                  style={{ width: '100px', fontSize: '12px' }}
+                                >
+                                  <option value="percentage">%</option>
+                                  <option value="amount">Amount</option>
+                                </select>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  min="0"
+                                  value={item.discount_type === 'percentage' 
+                                    ? (item.discount_percentage !== null && item.discount_percentage !== undefined ? item.discount_percentage : '')
+                                    : (item.discount || 0)}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val !== '' && !/^[\d.]*$/.test(val)) return;
+                                    if ((val.match(/\./g) || []).length > 1) return;
+                                    
+                                    if (item.discount_type === 'percentage') {
+                                      const numVal = val === '' ? null : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? null : parseFloat(val)));
+                                      if (numVal !== null && numVal > 100) return;
+                                      updateItemDiscount(item.item_id, undefined, undefined, numVal);
+                                    } else {
+                                      const numVal = val === '' ? 0 : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? 0 : parseFloat(val)));
+                                      const itemTotal = parseFloat(item.sale_rate || 0) * parseInt(item.quantity || 0);
+                                      if (numVal > itemTotal) return;
+                                      updateItemDiscount(item.item_id, numVal);
+                                    }
+                                  }}
+                                  onBlur={(e) => {
+                                    const val = e.target.value;
+                                    if (item.discount_type === 'percentage') {
+                                      const newDiscountPct = val === '' ? null : (parseFloat(val) || 0);
+                                      updateItemDiscount(item.item_id, undefined, undefined, newDiscountPct);
+                                    } else {
+                                      const newDiscount = val === '' ? 0 : (parseFloat(val) || 0);
+                                      updateItemDiscount(item.item_id, newDiscount);
+                                    }
+                                  }}
+                                  style={{ width: '100px', fontSize: '12px' }}
+                                  placeholder={item.discount_type === 'percentage' ? '%' : '₹'}
+                                />
+                              </div>
+                            ) : (
+                              <span style={{ color: '#999' }}>-</span>
+                            )}
+                          </td>
+                          <td>
+                            {item.quantity > 0 ? (() => {
+                              const saleRate = parseFloat(item.sale_rate || 0);
+                              const quantity = parseInt(item.quantity || 0);
+                              const itemTotal = saleRate * quantity;
+                              
+                              let itemDiscount = 0;
+                              if (item.discount_type === 'percentage' && item.discount_percentage !== null && item.discount_percentage !== undefined) {
+                                itemDiscount = (itemTotal * item.discount_percentage) / 100;
+                              } else {
+                                itemDiscount = parseFloat(item.discount || 0);
+                              }
+                              itemDiscount = Math.min(itemDiscount, itemTotal);
+                              const returnAmount = itemTotal - itemDiscount;
+                              
+                              return (
+                                <div>
+                                  <div>₹{returnAmount.toFixed(2)}</div>
+                                  {itemDiscount > 0 && (
+                                    <small style={{ color: '#28a745', fontSize: '10px' }}>
+                                      -₹{itemDiscount.toFixed(2)}
+                                    </small>
+                                  )}
+                                </div>
+                              );
+                            })() : (
+                              <span style={{ color: '#999' }}>₹0.00</span>
+                            )}
                           </td>
                           <td>
                             <button
@@ -505,7 +658,7 @@ const ReturnItem = () => {
                     </tbody>
                     <tfoot>
                       <tr>
-                        <td colSpan="6" style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                        <td colSpan="7" style={{ textAlign: 'right', fontWeight: 'bold' }}>
                           Total Return Amount ({getValidItemsCount()} {getValidItemsCount() === 1 ? 'item' : 'items'}):
                         </td>
                         <td style={{ fontWeight: 'bold' }}>₹{calculateTotal().toFixed(2)}</td>
@@ -573,6 +726,11 @@ const ReturnItem = () => {
                     type="button" 
                     className="btn btn-secondary"
                     onClick={handlePreview}
+                    disabled={isProcessing}
+                    style={{
+                      opacity: isProcessing ? 0.6 : 1,
+                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                    }}
                   >
                     Preview Return
                   </button>
@@ -622,13 +780,14 @@ const ReturnItem = () => {
                   }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #dee2e6' }}>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>S.No</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Product Name</th>
-                          <th style={{ padding: '10px', textAlign: 'left' }}>Brand</th>
-                          <th style={{ padding: '10px', textAlign: 'right' }}>Quantity</th>
-                          <th style={{ padding: '10px', textAlign: 'right' }}>Sale Rate</th>
-                          <th style={{ padding: '10px', textAlign: 'right' }}>Amount</th>
+                        <tr style={{ backgroundColor: '#34495e', color: 'white', borderBottom: '2px solid #dee2e6' }}>
+                          <th style={{ padding: '10px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>S.No</th>
+                          <th style={{ padding: '10px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Product Name</th>
+                          <th style={{ padding: '10px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Brand</th>
+                          <th style={{ padding: '10px', textAlign: 'right', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Quantity</th>
+                          <th style={{ padding: '10px', textAlign: 'right', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Sale Rate</th>
+                          <th style={{ padding: '10px', textAlign: 'right', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Discount</th>
+                          <th style={{ padding: '10px', textAlign: 'right', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Amount</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -639,26 +798,33 @@ const ReturnItem = () => {
                             <td style={{ padding: '10px' }}>{item.brand || '-'}</td>
                             <td style={{ padding: '10px', textAlign: 'right' }}>{item.quantity}</td>
                             <td style={{ padding: '10px', textAlign: 'right' }}>₹{parseFloat(item.sale_rate || 0).toFixed(2)}</td>
+                            <td style={{ padding: '10px', textAlign: 'right' }}>
+                              {item.discount > 0 ? (
+                                <span style={{ color: '#28a745' }}>-₹{parseFloat(item.discount || 0).toFixed(2)}</span>
+                              ) : (
+                                <span>-</span>
+                              )}
+                            </td>
                             <td style={{ padding: '10px', textAlign: 'right' }}>₹{parseFloat(item.return_amount || 0).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
                         <tr style={{ backgroundColor: '#f8f9fa', borderTop: '2px solid #dee2e6', fontWeight: 'bold' }}>
-                          <td colSpan="5" style={{ padding: '10px', textAlign: 'right' }}>Total Return Amount</td>
+                          <td colSpan="6" style={{ padding: '10px', textAlign: 'right' }}>Total Return Amount</td>
                           <td style={{ padding: '10px', textAlign: 'right' }}>
                             ₹{parseFloat(previewData.totalAmount || 0).toFixed(2)}
                           </td>
                         </tr>
                         {previewData.reason && (
                           <tr>
-                            <td colSpan="6" style={{ padding: '10px' }}>
+                            <td colSpan="7" style={{ padding: '10px' }}>
                               <strong>Reason:</strong> {previewData.reason}
                             </td>
                           </tr>
                         )}
                         <tr>
-                          <td colSpan="6" style={{ padding: '10px', fontSize: '12px', color: '#666' }}>
+                          <td colSpan="7" style={{ padding: '10px', fontSize: '12px', color: '#666' }}>
                             {previewData.partyType === 'seller' ? (
                               <>
                                 <div style={{ marginBottom: '8px' }}>
@@ -683,14 +849,24 @@ const ReturnItem = () => {
                     type="button" 
                     className="btn btn-secondary"
                     onClick={handleBackToEdit}
+                    disabled={isProcessing}
+                    style={{
+                      opacity: isProcessing ? 0.6 : 1,
+                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                    }}
                   >
                     Back to Edit
                   </button>
                   <button 
                     type="submit" 
                     className="btn btn-primary"
+                    disabled={isProcessing}
+                    style={{
+                      opacity: isProcessing ? 0.6 : 1,
+                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                    }}
                   >
-                    Confirm Return
+                    {isProcessing ? 'Processing...' : 'Confirm Return'}
                   </button>
                 </div>
               </div>

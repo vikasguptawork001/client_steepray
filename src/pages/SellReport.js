@@ -20,6 +20,7 @@ const SellReport = () => {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     fetchReport();
@@ -45,6 +46,8 @@ const SellReport = () => {
   };
 
   const exportToExcel = async () => {
+    if (exporting) return;
+    setExporting(true);
     try {
       const from = fromDate.toISOString().split('T')[0];
       const to = toDate.toISOString().split('T')[0];
@@ -63,6 +66,8 @@ const SellReport = () => {
     } catch (error) {
       console.error('Error exporting report:', error);
       alert('Error exporting report');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -71,8 +76,16 @@ const SellReport = () => {
       <div className="report">
         <div className="report-header">
           <h2>Sell Report</h2>
-          <button onClick={exportToExcel} className="btn btn-success">
-            Export to Excel
+          <button 
+            onClick={exportToExcel} 
+            className="btn btn-success"
+            disabled={exporting}
+            style={{
+              opacity: exporting ? 0.6 : 1,
+              cursor: exporting ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {exporting ? 'Exporting...' : 'Export to Excel'}
           </button>
         </div>
 
