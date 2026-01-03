@@ -143,8 +143,8 @@ const OrderSheet = () => {
                       <td>{order.product_code || 'N/A'}</td>
                       <td>{order.brand || 'N/A'}</td>
                       <td>
-                        <span className={`quantity-badge ${order.current_quantity <= order.required_quantity ? 'low' : ''}`}>
-                          {order.current_quantity} / {order.required_quantity}
+                        <span className={`quantity-badge low`}>
+                          {order.current_quantity}
                         </span>
                       </td>
                       <td>
