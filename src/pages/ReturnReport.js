@@ -174,7 +174,7 @@ const ReturnReport = () => {
                   <th>Items Summary</th>
                   <th>Total Return Amount</th>
                   <th>Reason</th>
-                  <th>Action</th>
+                  {/* <th>Action</th> */}
                 </tr>
               </thead>
               <tbody>
@@ -218,7 +218,7 @@ const ReturnReport = () => {
                       </td>
                       <td style={{ fontWeight: '600' }}>₹{parseFloat(txn.return_amount || 0).toFixed(2)}</td>
                       <td>{txn.reason || '-'}</td>
-                      <td style={{ textAlign: 'center' }}>
+                      {/* <td style={{ textAlign: 'center' }}>
                         {txn.bill_number && (
                           <a
                             href={`${config.api.baseUrl}/api/bills/return/${txn.id}/pdf?party_type=${txn.party_type}`}
@@ -230,7 +230,7 @@ const ReturnReport = () => {
                             View Bill
                           </a>
                         )}
-                      </td>
+                      </td> */}
                     </tr>
                   ))
                 )}

@@ -645,18 +645,19 @@ const Parties = () => {
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Date</th>
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Type</th>
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Bill/Ref No</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Description</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Total Amount</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Paid</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Balance</th>
+                            {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Description</th> */}
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Previous Amount</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Current Transaction</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Paid Amount</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>After Amount</th>
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Status</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Action</th>
+                            {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Action</th> */}
                           </tr>
                         </thead>
                         <tbody>
                           {transactionHistory.map((txn, idx) => (
                             <tr key={idx}>
-                              <td>{new Date(txn.date || txn.transaction_date || txn.created_at || txn.transaction_timestamp).toLocaleString()}</td>
+                              <td>{txn.transaction_timestamp}</td>
                               <td>
                                 <span style={{
                                   padding: '4px 8px',
@@ -666,11 +667,11 @@ const Parties = () => {
                                   backgroundColor: txn.type === 'sale' ? '#e3f2fd' : txn.type === 'purchase' || txn.type === 'purchase_payment' ? '#fff3e0' : txn.type === 'return' ? '#fce4ec' : '#e8f5e9',
                                   color: txn.type === 'sale' ? '#1976d2' : txn.type === 'purchase' || txn.type === 'purchase_payment' ? '#f57c00' : txn.type === 'return' ? '#c2185b' : '#388e3c'
                                 }}>
-                                  {txn.type === 'sale' ? 'Sale' : txn.type === 'purchase' ? 'Purchase' : txn.type === 'purchase_payment' ? 'Purchase Payment' : txn.type === 'return' ? 'Return' : 'Payment'}
+                                 {txn?.transaction_type}
                                 </span>
                               </td>
                               <td>{txn.bill_number || txn.id || '-'}</td>
-                              <td>
+                              {/* <td>
                                 <div style={{ maxWidth: '250px' }}>
                                   <div style={{ fontWeight: '500', marginBottom: '4px' }}>
                                     {txn.description || txn.product_name || (txn.type === 'payment' || txn.type === 'purchase_payment' ? (txn.type === 'purchase_payment' ? 'Purchase Payment' : 'Payment') : 'Transaction')}
@@ -702,19 +703,19 @@ const Parties = () => {
                                     </div>
                                   )}
                                 </div>
-                              </td>
+                              </td> */}
                               <td>
                                 <div style={{ fontWeight: '600', color: '#333' }}>
-                                  ₹{parseFloat(txn.previous_balance !== undefined ? txn.previous_balance : (txn.total_amount || txn.amount || 0)).toFixed(2)}
+                                  ₹{parseFloat(txn.previous_balance).toFixed(2)}
                                 </div>
-                                {txn.type === 'purchase' && txn.item_count > 1 && (
+                                {/* {txn.type === 'purchase' && txn.item_count > 1 && (
                                   <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
                                     ({txn.item_count} items)
                                   </div>
-                                )}
+                                )} */}
                               </td>
                               <td>
-                                {txn.type === 'purchase' || txn.type === 'purchase_payment' ? (
+                                {/* {txn.type === 'purchase' || txn.type === 'purchase_payment' ? (
                                   <div>
                                     <div style={{ fontWeight: '600', color: '#2e7d32', marginBottom: '2px' }}>
                                       ₹{parseFloat(txn.paid_amount || txn.amount || 0).toFixed(2)}
@@ -728,16 +729,26 @@ const Parties = () => {
                                   <div>
                                     ₹{parseFloat(txn.paid_amount || 0).toFixed(2)}
                                   </div>
-                                )}
+                                )} */}
+
+                                <div>
+                                  ₹{parseFloat(txn.this_transaction_amount).toFixed(2)}
+                                </div>
                               </td>
                               <td>
                                 <div style={{ 
                                   fontWeight: (txn.type === 'payment' || txn.type === 'purchase_payment') ? '600' : '500',
                                   color: parseFloat(txn.balance_amount || 0) > 0 ? '#d32f2f' : '#2e7d32'
                                 }}>
-                                  ₹{parseFloat(txn.balance_amount || 0).toFixed(2)}
+                                  ₹{parseFloat(txn.paid_amount).toFixed(2)}
                                 </div>
                               </td>
+                                <td>
+                                <div >
+                                  ₹{parseFloat(txn.balance_after).toFixed(2)}
+                                </div>
+                              </td>
+                              
                               <td>
                                 {txn.payment_status && (
                                   <span style={{
@@ -751,7 +762,7 @@ const Parties = () => {
                                   </span>
                                 )}
                               </td>
-                              <td style={{ textAlign: 'center' }}>
+                              {/* <td style={{ textAlign: 'center' }}>
                                 <button
                                   onClick={() => handleViewTransaction(txn)}
                                   className="btn btn-sm btn-primary"
@@ -759,7 +770,7 @@ const Parties = () => {
                                 >
                                   View
                                 </button>
-                              </td>
+                              </td> */}
                             </tr>
                           ))}
                         </tbody>
