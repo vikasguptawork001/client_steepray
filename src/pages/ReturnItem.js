@@ -227,6 +227,12 @@ const ReturnItem = () => {
 
   const addItemToCart = async (item) => {
     try {
+      // Check if item is out of stock
+      if ((item.quantity || 0) <= 0) {
+        toast.warning(`⚠️ "${item.product_name || item.item_name}" is out of stock and cannot be added`);
+        return;
+      }
+
       // Fetch full item details
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
       const fullItemData = response.data.item;
@@ -254,8 +260,9 @@ const ReturnItem = () => {
           discount_percentage: null
         }]);
       }
-      setSearchQuery('');
-      setSuggestedItems([]);
+      
+      // Don't clear search or close modal - allow adding multiple items
+      // Keep UX smooth: no toast spam on every item add
       setShowPreview(false);
       setPreviewData(null);
     } catch (error) {

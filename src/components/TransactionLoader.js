@@ -39,3 +39,4 @@ const TransactionLoader = ({ isLoading, message, type = 'transaction' }) => {
 
 export default TransactionLoader;
 
+
