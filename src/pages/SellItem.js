@@ -5,6 +5,8 @@ import apiClient from '../config/axios';
 import config from '../config/config';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import TransactionLoader from '../components/TransactionLoader';
+import ItemSearchModal from '../components/ItemSearchModal';
 import { numberToWords } from '../utils/numberToWords';
 import { getLocalDateString } from '../utils/dateUtils';
 import {
@@ -75,19 +77,23 @@ const SellItem = () => {
   }, [dispatch, toast]);
 
   useEffect(() => {
-    if (selectedSeller) {
+    // Only fetch if seller is selected AND we don't already have the info for this seller
+    if (selectedSeller && (!sellerInfo || sellerInfo.id !== selectedSeller)) {
       dispatch(fetchSellerInfo(selectedSeller)).catch((error) => {
         console.error('Error fetching seller info:', error);
         toast.error('Failed to load seller information');
       });
     }
-  }, [selectedSeller, dispatch, toast]);
+  }, [selectedSeller, sellerInfo, dispatch, toast]);
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
       dispatch(searchItems(searchQuery));
+      setShowItemSearchModal(true);
     } else {
       dispatch(clearSuggestedItems());
+      // Don't close modal when search is cleared - only close explicitly
+      // setShowItemSearchModal(false);
     }
   }, [searchQuery, dispatch]);
 
@@ -123,7 +129,7 @@ const SellItem = () => {
     try {
       // Check if item is out of stock
       if ((item.quantity || 0) <= 0) {
-        toast.warning(`⚠️ "${item.product_name}" is out of stock and cannot be added`);
+        toast.warning(`⚠️ "${item.product_name || item.item_name}" is out of stock and cannot be added`);
         return;
       }
       
@@ -131,20 +137,19 @@ const SellItem = () => {
       // `addItemToCart` uses:
       // - id, product_name, sale_rate, tax_rate, hsn_number, quantity (as available_quantity)
       dispatch(addItemToCart(item));
-      dispatch(setSearchQuery(''));
-      dispatch(clearSuggestedItems());
       
-      // Auto-focus back to search input for quick next item search (without scrolling)
-      setTimeout(() => {
-        // Focus item search input without scrolling (avoid jumping to seller input)
-        itemSearchInputRef.current?.focus?.({ preventScroll: true });
-      }, 100);
-      
+      // Don't clear search or close modal - allow adding multiple items
       // Keep UX smooth: no toast spam on every item add
     } catch (error) {
       console.error('Error adding item to cart:', error);
       toast.error('Error adding item');
     }
+  };
+
+  const handleModalClose = () => {
+    setShowItemSearchModal(false);
+    dispatch(setSearchQuery(''));
+    dispatch(clearSuggestedItems());
   };
 
   const handleToggleItemSelection = (itemId) => {
@@ -386,11 +391,13 @@ const SellItem = () => {
       }
 
       if (previewData.paymentStatus === 'partially_paid') {
-        const paidAmt = parseFloat(previewData.paidAmount) || 0;
+        // Use Redux state paidAmount as it's the most up-to-date value
+        const paidAmt = parseFloat(paidAmount) || 0;
         const grandTotal = previewData.grandTotal || previewData.total || 0;
         
-        if (paidAmt <= 0) {
-          toast.error('❌ Paid amount must be greater than 0 for partially paid transactions');
+        // Allow 0 for partial payment, only check if negative
+        if (paidAmt < 0) {
+          toast.error('❌ Paid amount cannot be negative');
           return;
         }
         
@@ -401,9 +408,21 @@ const SellItem = () => {
       }
 
       toast.info('⏳ Processing your sale transaction...');
-      const result = await dispatch(submitSale({ previewData, selectedSeller })).unwrap();
+      // Use current Redux state for paidAmount to ensure we send the latest value
+      const currentPaidAmount = previewData.paymentStatus === 'partially_paid' 
+        ? (paidAmount || 0) 
+        : (previewData.paidAmount || 0);
       
-      // Refresh seller info to get updated balance
+      // Create updated preview data with current paidAmount
+      const updatedPreviewData = {
+        ...previewData,
+        paidAmount: currentPaidAmount
+      };
+      
+      const result = await dispatch(submitSale({ previewData: updatedPreviewData, selectedSeller })).unwrap();
+      
+      // Refresh seller info to get updated balance after transaction
+      // This is necessary to get the updated balance, so we always fetch
       if (selectedSeller) {
         dispatch(fetchSellerInfo(selectedSeller)).catch((error) => {
           console.error('Error refreshing seller info:', error);
@@ -560,6 +579,54 @@ const SellItem = () => {
   // Local state for button actions to prevent double-clicks and race conditions
   const [actionInProgress, setActionInProgress] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState(new Set());
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const [showItemSearchModal, setShowItemSearchModal] = useState(false);
+  const billPreviewRef = useRef(null);
+
+  // Manage body scroll when transaction is processing
+  useEffect(() => {
+    const isProcessing = loading.submit || actionInProgress;
+    if (isProcessing) {
+      document.body.classList.add('transaction-loading');
+    } else {
+      document.body.classList.remove('transaction-loading');
+    }
+    return () => {
+      document.body.classList.remove('transaction-loading');
+    };
+  }, [loading.submit, actionInProgress]);
+
+  // Handle scroll-to-top button visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      if (billPreviewRef.current) {
+        const scrollTop = billPreviewRef.current.scrollTop;
+        setShowScrollToTop(scrollTop > 300);
+      }
+    };
+
+    const billPreview = billPreviewRef.current;
+    if (billPreview) {
+      billPreview.addEventListener('scroll', handleScroll);
+      return () => {
+        billPreview.removeEventListener('scroll', handleScroll);
+      };
+    }
+  }, [previewData]);
+
+  const handleScrollToTop = () => {
+    if (billPreviewRef.current) {
+      billPreviewRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleCopyBillNumber = () => {
+    if (previewData?.billNumber) {
+      navigator.clipboard.writeText(previewData.billNumber);
+      toast.success(`Bill number ${previewData.billNumber} copied to clipboard!`);
+    }
+  };
+
   const isBulkSelecting = selectedItemIds.size > 0;
 
   const handleBackToEditClick = async () => {
@@ -621,19 +688,37 @@ const SellItem = () => {
 
     return (
       <Layout>
+        <TransactionLoader isLoading={loading.submit || actionInProgress} type="sell" />
         <div className="sell-item">
           {/* Preview Header with Action Buttons */}
           <div className="preview-header">
             <div>
               <h2>Bill Preview</h2>
               {previewData.billNumber && (
-                <p style={{ 
+                <div style={{ 
                   margin: '6px 0 0 0', 
                   fontSize: '13px', 
-                  color: '#6c757d'
-          }}>
-                  Invoice #: <strong style={{ color: '#2c3e50' }}>{previewData.billNumber}</strong>
-                </p>
+                  color: '#6c757d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span>Invoice #: <strong style={{ color: '#2c3e50' }}>{previewData.billNumber}</strong></span>
+                  <button
+                    onClick={handleCopyBillNumber}
+                    className="btn btn-secondary"
+                    aria-label="Copy bill number to clipboard"
+                    style={{ 
+                      padding: '4px 8px', 
+                      fontSize: '11px',
+                      minHeight: 'auto',
+                      minWidth: 'auto'
+                    }}
+                    title="Copy bill number"
+                  >
+                    📋 Copy
+                  </button>
+                </div>
               )}
             </div>
             <div className="preview-actions">
@@ -642,6 +727,9 @@ const SellItem = () => {
                 onClick={isTransactionComplete ? handleNewSaleClick : handleBackToEditClick}
                 className="btn btn-secondary"
                 disabled={isProcessing}
+                aria-disabled={isProcessing}
+                aria-label={isTransactionComplete ? 'Start a new sale' : 'Go back to edit the bill'}
+                tabIndex={isProcessing ? -1 : 0}
               >
                 {isTransactionComplete ? 'New Sale' : 'Back to Edit'}
               </button>
@@ -652,6 +740,9 @@ const SellItem = () => {
                   onClick={handlePrintClick}
                   className="btn btn-primary"
                   disabled={printDisabled || printClicked || isProcessing}
+                  aria-disabled={printDisabled || printClicked || isProcessing}
+                  aria-label={printClicked ? 'Printing bill' : 'Print bill'}
+                  tabIndex={(printDisabled || printClicked || isProcessing) ? -1 : 0}
                 >
                   {printClicked ? (
                     <>
@@ -679,6 +770,9 @@ const SellItem = () => {
                   onClick={handleDownloadPDFClick}
                   className="btn btn-success"
                   disabled={!previewData.transactionId || isProcessing}
+                  aria-disabled={!previewData.transactionId || isProcessing}
+                  aria-label="Download bill as PDF"
+                  tabIndex={(!previewData.transactionId || isProcessing) ? -1 : 0}
                 >
                   Download PDF
                 </button>
@@ -690,6 +784,9 @@ const SellItem = () => {
                   onClick={handleSubmitClick}
                   className="btn btn-success"
                   disabled={isProcessing}
+                  aria-disabled={isProcessing}
+                  aria-label={loading.submit ? 'Processing sale transaction' : 'Confirm and submit sale'}
+                  tabIndex={isProcessing ? -1 : 0}
                   style={{
                     fontSize: '15px',
                     padding: '12px 28px',
@@ -758,56 +855,51 @@ const SellItem = () => {
             </div>
           )}
           {previewData && !previewLoading && (
-            <div 
-              className="bill-preview" 
-              id="bill-print-content"
-              tabIndex={0}
-              style={{ 
-                outline: 'none',
-                maxHeight: 'calc(100vh - 200px)',
-                overflowY: 'auto',
-                overflowX: 'auto'
-              }}
-            >
-            <div className="bill-header" style={{ borderBottom: '2px solid #333', paddingBottom: '20px', marginBottom: '20px' }}>
-              {/* Company Header */}
-              <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-                <h1 style={{ margin: '0 0 5px 0', fontSize: '24px', fontWeight: 'bold', letterSpacing: '1px' }}>STEEPRAY INFORMATION SERVICES PRIVATE LIMITED</h1>
-                <p style={{ margin: '3px 0', fontSize: '12px', color: '#666' }}>Insert Company Address</p>
-                <p style={{ margin: '3px 0', fontSize: '12px', color: '#666' }}>Tel.: Insert Phone | Email: Insert Email</p>
-                <p style={{ margin: '3px 0', fontSize: '11px', color: '#888', fontStyle: 'italic' }}>Insert Business Description</p>
-                <p style={{ margin: '5px 0 0 0', fontSize: '12px', fontWeight: '600' }}>GSTIN: <span style={{ color: '#999' }}>Insert GSTIN</span></p>
+            <div style={{ position: 'relative' }}>
+              <div 
+                ref={billPreviewRef}
+                className="bill-preview" 
+                id="bill-print-content"
+                tabIndex={0}
+                style={{ 
+                  outline: 'none',
+                  maxHeight: 'calc(100vh - 200px)',
+                  overflowY: 'auto',
+                  overflowX: 'auto',
+                  position: 'relative',
+                  scrollBehavior: 'smooth'
+                }}
+              >
+            {/* Seller Info Only */}
+            <div style={{ marginBottom: '25px', padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+              <h3 style={{ margin: '0 0 15px 0', fontSize: '18px', fontWeight: '600', color: '#2c3e50' }}>Customer Information</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px', fontSize: '14px' }}>
+                <div>
+                  <strong>Name:</strong> {previewData.seller?.party_name || '-'}
                 </div>
-              
-              {/* TAX INVOICE / ESTIMATED BILL Title */}
-              <div style={{ textAlign: 'center', margin: '15px 0', borderTop: '1px solid #ddd', borderBottom: '1px solid #ddd', padding: '10px 0' }}>
-                <h2 style={{ fontSize: '20px', fontWeight: 'bold', margin: '0', letterSpacing: '2px' }}>
-                  {previewData.withGst ? 'TAX INVOICE' : 'ESTIMATED BILL'}
-                </h2>
+                {previewData.seller?.address && (
+                  <div>
+                    <strong>Address:</strong> {previewData.seller.address}
+                  </div>
+                )}
+                {previewData.seller?.mobile_number && (
+                  <div>
+                    <strong>Mobile No.:</strong> {previewData.seller.mobile_number}
+                  </div>
+                )}
+                {previewData.seller?.gst_number && (
+                  <div>
+                    <strong>GSTIN / UIN:</strong> {previewData.seller.gst_number}
+                  </div>
+                )}
+                {previewData.billNumber && (
+                  <div>
+                    <strong>Invoice No.:</strong> {previewData.billNumber}
+                  </div>
+                )}
+                <div>
+                  <strong>Date:</strong> {new Date().toLocaleDateString('en-GB')}
                 </div>
-              
-              {/* Invoice Details and Buyer Info */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '15px', fontSize: '12px' }}>
-                {/* Left: Buyer Details */}
-                <div style={{ flex: 1, borderRight: '1px solid #ddd', paddingRight: '15px' }}>
-                  <p style={{ margin: '3px 0', fontWeight: '600' }}>Buyer (Bill To):</p>
-                  <p style={{ margin: '3px 0' }}><strong>Name:</strong> {previewData.seller?.party_name || '-'}</p>
-                  <p style={{ margin: '3px 0' }}><strong>Address:</strong> {previewData.seller?.address || '-'}</p>
-                  {previewData.seller?.mobile_number && <p style={{ margin: '3px 0' }}><strong>Mobile No.:</strong> {previewData.seller.mobile_number}</p>}
-                  {previewData.seller?.gst_number && <p style={{ margin: '3px 0' }}><strong>GSTIN / UIN:</strong> {previewData.seller.gst_number}</p>}
-              </div>
-                
-                {/* Right: Invoice Details */}
-                <div style={{ flex: 1, paddingLeft: '15px', textAlign: 'right' }}>
-                  <p style={{ margin: '3px 0' }}><strong>Invoice No.:</strong> {previewData.billNumber || 'Pending'}</p>
-                  <p style={{ margin: '3px 0' }}><strong>Dated:</strong> {new Date().toLocaleDateString('en-GB')}</p>
-                  <p style={{ margin: '3px 0' }}><strong>Place of Supply:</strong> <span style={{ color: '#999' }}>Insert State</span></p>
-                  <p style={{ margin: '3px 0' }}><strong>Reverse Charge:</strong> N</p>
-                  <p style={{ margin: '3px 0' }}><strong>GR/RR No.:</strong> <span style={{ color: '#999' }}>-</span></p>
-                  <p style={{ margin: '3px 0' }}><strong>Transport:</strong> <span style={{ color: '#999' }}>-</span></p>
-                  <p style={{ margin: '3px 0' }}><strong>Vehicle No.:</strong> <span style={{ color: '#999' }}>-</span></p>
-                  <p style={{ margin: '3px 0' }}><strong>Station:</strong> <span style={{ color: '#999' }}>-</span></p>
-              </div>
               </div>
             </div>
 
@@ -1018,7 +1110,7 @@ const SellItem = () => {
                       {previewData.withGst && totalTax > 0 && (
                         <>
                           <tr>
-                            <td colSpan={3} style={{ padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>Tax Rate: {previewData.items[0]?.tax_rate || 0}%</td>
+                            {/* <td colSpan={3} style={{ padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>Tax Rate: {previewData.items[0]?.tax_rate || 0}%</td> */}
                             <td colSpan={2} style={{ padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>Taxable Amt.: ₹{taxableAmt.toFixed(2)}</td>
                             <td style={{ padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>CGST Amt.: ₹{cgstAmt.toFixed(2)}</td>
                             <td style={{ padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>SGST Amt.: ₹{sgstAmt.toFixed(2)}</td>
@@ -1047,16 +1139,16 @@ const SellItem = () => {
                     Amount Paid:
                   </td>
                         <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
-                    ₹{(previewData.paidAmount || 0).toFixed(2)}
+                    ₹{(paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0)).toFixed(2)}
                   </td>
                         {!previewData.transactionId && <td></td>}
                 </tr>
-                      <tr style={{ backgroundColor: ((previewData.grandTotal || previewData.total || 0) - (previewData.paidAmount || 0)) > 0 ? '#f8d7da' : '#d4edda' }}>
+                      <tr style={{ backgroundColor: ((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))) > 0 ? '#f8d7da' : '#d4edda' }}>
                         <td colSpan={previewData.withGst ? 10 : 6} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '700' }}>
                     Balance Due:
                   </td>
                         <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '700' }}>
-                    ₹{(((previewData.grandTotal || previewData.total) || 0) - (previewData.paidAmount || 0)).toFixed(2)}
+                    ₹{(((previewData.grandTotal || previewData.total) || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))).toFixed(2)}
                   </td>
                         {!previewData.transactionId && <td></td>}
                 </tr>
@@ -1072,131 +1164,133 @@ const SellItem = () => {
                 <strong>Amount in Words:</strong> {numberToWords(previewData.grandTotal || previewData.total || 0)}
               </p>
             </div>
-            
-            {/* Bank Details */}
-            <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '5px', border: '1px solid #ddd', fontSize: '12px' }}>
-              <p style={{ margin: '5px 0', fontWeight: '600' }}>Bank Details:</p>
-              <p style={{ margin: '3px 0' }}><strong>Bank Name:</strong> <span style={{ color: '#999' }}>Insert Bank Name</span></p>
-              <p style={{ margin: '3px 0' }}><strong>Account No.:</strong> <span style={{ color: '#999' }}>Insert Account Number</span></p>
-              <p style={{ margin: '3px 0' }}><strong>IFSC CODE:</strong> <span style={{ color: '#999' }}>Insert IFSC Code</span></p>
-            </div>
-            
-            {/* Terms & Conditions */}
-            <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '5px', border: '1px solid #ddd', fontSize: '11px' }}>
-              <p style={{ margin: '5px 0', fontWeight: '600' }}>Terms & Conditions:</p>
-              <p style={{ margin: '3px 0' }}>E.& O.E.</p>
-              <p style={{ margin: '3px 0' }}>1. Goods once sold will not be taken back.</p>
-              <p style={{ margin: '3px 0' }}>2. Interest @ 18% p.a. will be charged if the payment is not made within the stipulated time 45 days.</p>
-              <p style={{ margin: '3px 0' }}>3. Subject to 'Patna' Jurisdiction only.</p>
-            </div>
-            
-            {/* Signature Section */}
-            <div style={{ marginTop: '30px', display: 'flex', justifyContent: 'space-between', paddingTop: '20px', borderTop: '1px solid #ddd' }}>
-              <div style={{ flex: 1, textAlign: 'center' }}>
-                <div style={{ height: '60px', borderBottom: '1px solid #333', marginBottom: '5px' }}></div>
-                <p style={{ margin: '5px 0', fontSize: '12px', fontWeight: '600' }}>Receiver's Signature</p>
-              </div>
-              <div style={{ flex: 1, textAlign: 'center' }}>
-                <div style={{ height: '60px', borderBottom: '1px solid #333', marginBottom: '5px' }}></div>
-                <p style={{ margin: '5px 0', fontSize: '12px', fontWeight: '600' }}>For STEEPRAY INFORMATION SERVICES PRIVATE LIMITED</p>
-                <p style={{ margin: '5px 0', fontSize: '12px' }}>Authorised Signatory</p>
-              </div>
-            </div>
 
             {!previewData.transactionId && (
-              <div className="payment-section">
-                <h3>
-                  💳 Payment Configuration
-                </h3>
-
-                {/* GST Selection */}
+              <div className="payment-section" style={{ marginTop: '30px' }}>
                 <div style={{
-                  marginBottom: '25px',
-                  padding: '15px',
-                  backgroundColor: 'white',
-                  borderRadius: '6px',
-                  border: '1px solid #dee2e6'
+                  marginBottom: '20px',
+                  paddingBottom: '12px',
+                  borderBottom: '2px solid #e9ecef'
                 }}>
-                  <label style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    cursor: 'pointer',
-                    fontSize: '15px',
-                    fontWeight: '500'
+                  <h3 style={{
+                    margin: 0,
+                    fontSize: '20px',
+                    fontWeight: '600',
+                    color: '#212529',
+                    letterSpacing: '-0.3px'
                   }}>
-                    <input
-                      type="checkbox"
-                      checked={withGst}
-                      onChange={async (e) => {
-                        if (actionInProgress || previewLoading) return;
-                        setActionInProgress(true);
-                        try {
-                          const newWithGst = e.target.checked;
-                          dispatch(setWithGst(newWithGst));
-                          await handlePreview(newWithGst);
-                        } finally {
-                          setActionInProgress(false);
-                        }
-                      }}
-                      disabled={previewLoading || actionInProgress}
-                      style={{
-                        width: '18px',
-                        height: '18px',
-                        cursor: (previewLoading || actionInProgress) ? 'not-allowed' : 'pointer'
-                      }}
-                    />
-                    <span style={{ color: '#2c3e50' }}>
-                      Include GST in calculations
-                      {withGst && <span style={{ color: '#28a745', marginLeft: '10px' }}>✓ GST Applied</span>}
-                    </span>
-                  </label>
+                    Payment Configuration
+                  </h3>
                 </div>
 
-                {/* Previous Balance Payment */}
-                {previewData.seller && previewData.seller.balance_amount > 0 && (
+                {/* Professional Payment Controls Row */}
+                <div className="payment-controls-grid" style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'auto auto 1fr auto',
+                  gap: '20px',
+                  alignItems: 'center',
+                  padding: '24px',
+                  backgroundColor: '#ffffff',
+                  borderRadius: '12px',
+                  border: '1px solid #e0e0e0',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+                }}>
+                  {/* GST Selection */}
                   <div style={{
-                    marginBottom: '25px',
-                    padding: '18px',
-                    backgroundColor: '#fff3cd',
-                    borderRadius: '6px',
-                    border: '2px solid #ffc107'
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '14px 20px',
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '8px',
+                    border: '1px solid #e9ecef',
+                    minWidth: '180px',
+                    height: '48px'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                      <span style={{ fontSize: '24px' }}>⚠️</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: '600', fontSize: '16px', color: '#856404' }}>
-                          Previous Outstanding Balance
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      margin: 0,
+                      width: '100%',
+                      color: '#495057'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={withGst}
+                        onChange={async (e) => {
+                          if (actionInProgress || previewLoading) return;
+                          setActionInProgress(true);
+                          try {
+                            const newWithGst = e.target.checked;
+                            dispatch(setWithGst(newWithGst));
+                            await handlePreview(newWithGst);
+                          } finally {
+                            setActionInProgress(false);
+                          }
+                        }}
+                        disabled={previewLoading || actionInProgress}
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          cursor: (previewLoading || actionInProgress) ? 'not-allowed' : 'pointer',
+                          accentColor: '#28a745'
+                        }}
+                      />
+                      <span>
+                        Include GST
+                        {withGst && <span style={{ color: '#28a745', marginLeft: '8px', fontWeight: '600' }}>✓</span>}
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Previous Balance Payment */}
+                  {previewData.seller && previewData.seller.balance_amount > 0 && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '14px 20px',
+                      backgroundColor: '#fff8e1',
+                      borderRadius: '8px',
+                      border: '1px solid #ffc107',
+                      minWidth: '200px',
+                      height: '48px'
+                    }}>
+                      <span style={{ fontSize: '18px', lineHeight: 1 }}>⚠️</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.3' }}>
+                        <div style={{ fontWeight: '600', fontSize: '12px', color: '#856404', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Previous Balance
                         </div>
-                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#e65100', marginTop: '4px' }}>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#e65100', marginTop: '2px' }}>
                           ₹{parseFloat(previewData.seller?.balance_amount || 0).toFixed(2)}
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Payment Status */}
-                <div style={{
-                  padding: '18px',
-                  backgroundColor: 'white',
-                  borderRadius: '6px',
-                  border: '1px solid #dee2e6'
-                }}>
-                  <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', fontWeight: '600', color: '#2c3e50' }}>
-                    Payment Status for This Invoice
-                  </h4>
-                  
-                  <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', flexWrap: 'wrap' }}>
+                  {/* Payment Status Radio Buttons */}
+                  <div style={{
+                    display: 'flex',
+                    gap: '12px',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
                     <label style={{
-                      flex: '1',
-                      minWidth: '200px',
-                      padding: '15px',
-                      border: paymentStatus === 'fully_paid' ? '3px solid #28a745' : '2px solid #dee2e6',
-                      borderRadius: '6px',
-                      backgroundColor: paymentStatus === 'fully_paid' ? '#d4edda' : 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '12px 24px',
+                      border: paymentStatus === 'fully_paid' ? '2px solid #28a745' : '1px solid #dee2e6',
+                      borderRadius: '8px',
+                      backgroundColor: paymentStatus === 'fully_paid' ? '#d4edda' : '#ffffff',
                       cursor: 'pointer',
-                      transition: 'all 0.2s'
+                      transition: 'all 0.2s ease',
+                      minWidth: '150px',
+                      justifyContent: 'center',
+                      boxShadow: paymentStatus === 'fully_paid' ? '0 2px 4px rgba(40, 167, 69, 0.2)' : 'none'
                     }}>
                       <input
                         type="radio"
@@ -1214,25 +1308,31 @@ const SellItem = () => {
                           }
                         }}
                         disabled={actionInProgress}
-                        style={{ marginRight: '10px' }}
+                        style={{ margin: 0, accentColor: '#28a745' }}
                       />
-                      <span style={{ fontWeight: '600', color: paymentStatus === 'fully_paid' ? '#155724' : '#495057' }}>
-                        ✓ Fully Paid
+                      <span style={{ 
+                        fontWeight: '600', 
+                        color: paymentStatus === 'fully_paid' ? '#155724' : '#6c757d', 
+                        fontSize: '14px',
+                        letterSpacing: '0.2px'
+                      }}>
+                        Fully Paid
                       </span>
-                      <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '5px', marginLeft: '24px' }}>
-                        Customer pays the full amount now
-                      </div>
                     </label>
 
                     <label style={{
-                      flex: '1',
-                      minWidth: '200px',
-                      padding: '15px',
-                      border: paymentStatus === 'partially_paid' ? '3px solid #ffc107' : '2px solid #dee2e6',
-                      borderRadius: '6px',
-                      backgroundColor: paymentStatus === 'partially_paid' ? '#fff3cd' : 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '12px 24px',
+                      border: paymentStatus === 'partially_paid' ? '2px solid #ffc107' : '1px solid #dee2e6',
+                      borderRadius: '8px',
+                      backgroundColor: paymentStatus === 'partially_paid' ? '#fff8e1' : '#ffffff',
                       cursor: 'pointer',
-                      transition: 'all 0.2s'
+                      transition: 'all 0.2s ease',
+                      minWidth: '150px',
+                      justifyContent: 'center',
+                      boxShadow: paymentStatus === 'partially_paid' ? '0 2px 4px rgba(255, 193, 7, 0.2)' : 'none'
                     }}>
                       <input
                         type="radio"
@@ -1256,102 +1356,131 @@ const SellItem = () => {
                           }
                         }}
                         disabled={actionInProgress}
-                        style={{ marginRight: '10px' }}
+                        style={{ margin: 0, accentColor: '#ffc107' }}
                       />
-                      <span style={{ fontWeight: '600', color: paymentStatus === 'partially_paid' ? '#856404' : '#495057' }}>
-                        ⚡ Partially Paid
+                      <span style={{ 
+                        fontWeight: '600', 
+                        color: paymentStatus === 'partially_paid' ? '#856404' : '#6c757d', 
+                        fontSize: '14px',
+                        letterSpacing: '0.2px'
+                      }}>
+                        Partially Paid
                       </span>
-                      <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '5px', marginLeft: '24px' }}>
-                        Customer pays part now, rest later
-                      </div>
                     </label>
                   </div>
 
+                  {/* Amount Paid Now Input */}
                   {paymentStatus === 'partially_paid' && (
                     <div style={{
-                      marginTop: '15px',
-                      padding: '15px',
-                      backgroundColor: '#f8f9fa',
-                      borderRadius: '5px',
-                      border: '1px solid #dee2e6'
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      minWidth: '220px'
                     }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', color: '#2c3e50' }}>
-                        Amount Paid Now (for this invoice)
+                      <label style={{ 
+                        fontSize: '12px', 
+                        fontWeight: '600', 
+                        color: '#495057',
+                        margin: 0,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}>
+                        Amount Paid
                       </label>
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        max={previewData.grandTotal || previewData.total}
-                        value={paidAmount === 0 ? '' : paidAmount}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '') {
-                            dispatch(setPaidAmount(0));
-                            return;
-                          }
-                          const amount = parseFloat(val) || 0;
-                          const maxAmount = previewData.grandTotal || previewData.total || 0;
-                          const finalAmount = Math.min(Math.max(0, amount), maxAmount);
-                          dispatch(setPaidAmount(finalAmount));
-                        }}
-                        onBlur={async (e) => {
-                          if (actionInProgress) return;
-                          setActionInProgress(true);
-                          try {
+                      <div style={{ position: 'relative' }}>
+                        <span style={{
+                          position: 'absolute',
+                          left: '12px',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          color: '#6c757d',
+                          fontWeight: '600',
+                          fontSize: '14px'
+                        }}>₹</span>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          max={previewData.grandTotal || previewData.total}
+                          value={paidAmount === 0 ? '' : paidAmount}
+                          onChange={(e) => {
                             const val = e.target.value;
-                            const amount = val === '' ? 0 : parseFloat(val) || 0;
+                            if (val === '') {
+                              dispatch(setPaidAmount(0));
+                              return;
+                            }
+                            const amount = parseFloat(val) || 0;
                             const maxAmount = previewData.grandTotal || previewData.total || 0;
                             const finalAmount = Math.min(Math.max(0, amount), maxAmount);
+                            // Update state immediately so input reflects the change
                             dispatch(setPaidAmount(finalAmount));
-                            await handlePreview(null, {
-                              paymentStatus: 'partially_paid',
-                              paidAmount: finalAmount
-                            });
-                          } finally {
-                            setActionInProgress(false);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.target.blur();
-                          }
-                        }}
-                        disabled={actionInProgress}
-                        style={{
-                          width: '100%',
-                          padding: '12px',
-                          fontSize: '16px',
-                          fontWeight: '500',
-                          border: '2px solid #007bff',
-                          borderRadius: '5px',
-                          backgroundColor: actionInProgress ? '#f5f5f5' : 'white'
-                        }}
-                        placeholder="Enter paid amount"
-                      />
+                          }}
+                          onBlur={async (e) => {
+                            if (actionInProgress) return;
+                            setActionInProgress(true);
+                            try {
+                              // Use the current Redux state paidAmount, not the input value
+                              // This ensures we use the value that was set in onChange
+                              const currentPaidAmount = paidAmount || 0;
+                              const maxAmount = previewData.grandTotal || previewData.total || 0;
+                              const finalAmount = Math.min(Math.max(0, currentPaidAmount), maxAmount);
+                              
+                              // Ensure state is set correctly
+                              if (finalAmount !== paidAmount) {
+                                dispatch(setPaidAmount(finalAmount));
+                              }
+                              
+                              // Update preview with the current paid amount
+                              await handlePreview(null, {
+                                paymentStatus: 'partially_paid',
+                                paidAmount: finalAmount
+                              });
+                            } finally {
+                              setActionInProgress(false);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.target.blur();
+                            }
+                          }}
+                          disabled={actionInProgress}
+                          style={{
+                            padding: '11px 12px 11px 32px',
+                            fontSize: '15px',
+                            fontWeight: '600',
+                            border: '1px solid #ced4da',
+                            borderRadius: '8px',
+                            backgroundColor: actionInProgress ? '#f8f9fa' : '#ffffff',
+                            width: '100%',
+                            color: '#212529',
+                            transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out'
+                          }}
+                          placeholder="0.00"
+                          onFocus={(e) => {
+                            e.target.style.borderColor = '#007bff';
+                            e.target.style.boxShadow = '0 0 0 0.2rem rgba(0, 123, 255, 0.25)';
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = '#ced4da';
+                            e.target.style.boxShadow = 'none';
+                          }}
+                        />
+                      </div>
                       <div style={{
+                        fontSize: '11px',
+                        color: '#6c757d',
                         display: 'flex',
                         justifyContent: 'space-between',
-                        marginTop: '10px',
-                        fontSize: '13px',
-                        color: '#6c757d'
+                        marginTop: '2px'
                       }}>
-                        <span>Total to Pay:</span>
-                        <strong style={{ color: '#2c3e50' }}>₹{(previewData.grandTotal || previewData.total || 0).toFixed(2)}</strong>
+                        <span>Total: <strong style={{ color: '#212529' }}>₹{(previewData.grandTotal || previewData.total || 0).toFixed(2)}</strong></span>
+                        {paidAmount > 0 && (
+                          <span style={{ color: '#dc3545', fontWeight: '600' }}>
+                            Due: ₹{Math.max(0, (previewData.grandTotal || previewData.total || 0) - paidAmount).toFixed(2)}
+                          </span>
+                        )}
                       </div>
-                      {paidAmount > 0 && (
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          marginTop: '5px',
-                          fontSize: '13px',
-                          color: '#dc3545',
-                          fontWeight: '600'
-                        }}>
-                          <span>Balance Due:</span>
-                          <span>₹{Math.max(0, (previewData.grandTotal || previewData.total || 0) - paidAmount).toFixed(2)}</span>
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -1513,22 +1642,22 @@ const SellItem = () => {
                       fontWeight: '700', 
                       color: '#28a745'
                     }}>
-                      ₹{(previewData.paidAmount || 0).toFixed(2)}
+                      ₹{(paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0)).toFixed(2)}
                     </div>
                   </div>
                   <div style={{
                     padding: '15px',
-                    background: ((previewData.grandTotal || previewData.total || 0) - (previewData.paidAmount || 0)) > 0 
+                    background: ((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))) > 0 
                       ? 'linear-gradient(135deg, #fff5f5 0%, #ffffff 100%)'
                       : 'linear-gradient(135deg, #d4edda 0%, #ffffff 100%)',
                     borderRadius: '10px',
-                    border: ((previewData.grandTotal || previewData.total || 0) - (previewData.paidAmount || 0)) > 0 
+                    border: ((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))) > 0 
                       ? '1px solid #fecaca'
                       : '1px solid #c3e6cb'
                   }}>
                     <div style={{ 
                       fontSize: '12px', 
-                      color: ((previewData.grandTotal || previewData.total || 0) - (previewData.paidAmount || 0)) > 0 ? '#721c24' : '#155724', 
+                      color: ((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))) > 0 ? '#721c24' : '#155724', 
                       marginBottom: '8px',
                       fontWeight: '600',
                       textTransform: 'uppercase',
@@ -1539,154 +1668,42 @@ const SellItem = () => {
                     <div style={{ 
                       fontSize: '18px', 
                       fontWeight: '700', 
-                      color: ((previewData.grandTotal || previewData.total || 0) - (previewData.paidAmount || 0)) > 0 ? '#dc3545' : '#28a745'
+                      color: ((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))) > 0 ? '#dc3545' : '#28a745'
                     }}>
-                      ₹{((previewData.grandTotal || previewData.total || 0) - (previewData.paidAmount || 0)).toFixed(2)}
+                      ₹{((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))).toFixed(2)}
                     </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Enhanced Summary Box */}
-            <div className="summary-box" style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '30px',
-              marginTop: '40px'
-            }}>
-              <div style={{
-                padding: '20px',
-                backgroundColor: '#f8f9fa',
-                borderRadius: '8px',
-                border: '1px solid #dee2e6'
-              }}>
-                <h4 style={{ margin: '0 0 15px 0', fontSize: '16px', fontWeight: '600', color: '#2c3e50' }}>
-                  📝 Remarks & Notes
-                </h4>
-                <p style={{ color: '#6c757d', fontSize: '14px', lineHeight: '1.6', margin: 0 }}>
-                  Thank you for your business. For any queries, please contact us.
-                </p>
-                <p style={{ color: '#495057', fontSize: '13px', marginTop: '15px', fontStyle: 'italic' }}>
-                  Terms & Conditions Apply
-                </p>
               </div>
-
-              <div style={{
-                padding: '25px',
-                backgroundColor: 'white',
-                borderRadius: '8px',
-                border: '3px solid #2c3e50',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-              }}>
-                <h4 style={{
-                  margin: '0 0 20px 0',
-                  fontSize: '18px',
-                  fontWeight: '700',
-                  color: '#2c3e50',
-                  borderBottom: '2px solid #2c3e50',
-                  paddingBottom: '10px'
-                }}>
-                  💰 Amount Summary
-                </h4>
-
-                {/* Subtotal/Taxable */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '10px 0',
-                  borderBottom: '1px solid #e9ecef',
-                  fontSize: '14px'
-                }}>
-                  <span style={{ color: '#6c757d' }}>{previewData.withGst ? 'Taxable Amount:' : 'Subtotal:'}</span>
-                  <span style={{ fontWeight: '600', color: '#495057' }}>₹{(previewData.subtotal || 0).toFixed(2)}</span>
-                </div>
-
-                {/* GST */}
-                {previewData.withGst && (previewData.taxAmount || 0) > 0 && (
-                  <div style={{
+              {/* Scroll to Top Button */}
+              {showScrollToTop && (
+                <button
+                  onClick={handleScrollToTop}
+                  className="btn btn-primary"
+                  aria-label="Scroll to top of bill preview"
+                  style={{
+                    position: 'absolute',
+                    bottom: '20px',
+                    right: '20px',
+                    borderRadius: '50%',
+                    width: '50px',
+                    height: '50px',
+                    padding: '0',
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    padding: '10px 0',
-                    borderBottom: '1px solid #e9ecef',
-                    fontSize: '14px'
-                  }}>
-                    <span style={{ color: '#6c757d' }}>Total GST:</span>
-                    <span style={{ fontWeight: '600', color: '#495057' }}>₹{(previewData.taxAmount || 0).toFixed(2)}</span>
-                  </div>
-                )}
-
-                {/* Invoice Total */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '12px 0',
-                  borderBottom: '2px solid #2c3e50',
-                  fontSize: '15px'
-                }}>
-                  <span style={{ fontWeight: '600', color: '#2c3e50' }}>Invoice Amount:</span>
-                  <span style={{ fontWeight: '700', color: '#2c3e50', fontSize: '16px' }}>₹{(previewData.total || 0).toFixed(2)}</span>
-                </div>
-
-                {/* Previous Balance Paid */}
-                {(previewData.previousBalancePaid || 0) > 0 && (
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    padding: '10px 0',
-                    fontSize: '14px',
-                    color: '#28a745',
-                    fontWeight: '600'
-                  }}>
-                    <span>Previous Balance Paid:</span>
-                    <span>+₹{(previewData.previousBalancePaid || 0).toFixed(2)}</span>
-                  </div>
-                )}
-
-                {/* Grand Total */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '15px',
-                  marginTop: '10px',
-                  backgroundColor: '#e8f5e9',
-                  borderRadius: '6px',
-                  border: '2px solid #28a745'
-                }}>
-                  <span style={{ fontWeight: '700', fontSize: '18px', color: '#155724' }}>Grand Total:</span>
-                  <span style={{ fontWeight: '700', fontSize: '20px', color: '#155724' }}>
-                    ₹{((previewData.grandTotal || previewData.total) || 0).toFixed(2)}
-                  </span>
-                </div>
-
-                {/* Payment breakdown if partially paid */}
-                {previewData.paymentStatus === 'partially_paid' && (
-                  <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px dashed #dee2e6' }}>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      padding: '8px 0',
-                      fontSize: '14px',
-                      color: '#28a745'
-                    }}>
-                      <span style={{ fontWeight: '600' }}>Amount Paid:</span>
-                      <span style={{ fontWeight: '600' }}>₹{(previewData.paidAmount || 0).toFixed(2)}</span>
-                    </div>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      padding: '8px 0',
-                      fontSize: '14px',
-                      color: '#dc3545'
-                    }}>
-                      <span style={{ fontWeight: '600' }}>Balance Due:</span>
-                      <span style={{ fontWeight: '700' }}>₹{Math.max(0, (previewData.grandTotal || previewData.total || 0) - (previewData.paidAmount || 0)).toFixed(2)}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                    zIndex: 10,
+                    animation: 'fadeIn 0.3s ease-in'
+                  }}
+                >
+                  ↑
+                </button>
+              )}
             </div>
-          </div>
           )}
         </div>
       </Layout>
@@ -1695,6 +1712,7 @@ const SellItem = () => {
 
   return (
     <Layout>
+      <TransactionLoader isLoading={loading.submit || actionInProgress} type="sell" />
       <div className="sell-item">
         <h2>Create New Sale</h2>
 
@@ -1879,14 +1897,32 @@ const SellItem = () => {
                   }
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && selectedItemIds.size > 0) {
+                  // Ctrl+A or Cmd+A to select all available items
+                  if ((e.ctrlKey || e.metaKey) && e.key === 'a' && suggestedItems.length > 0) {
+                    e.preventDefault();
+                    const availableItems = suggestedItems.filter(item => (item.quantity || 0) > 0);
+                    if (availableItems.length > 0) {
+                      setSelectedItemIds(new Set(availableItems.map(item => item.id)));
+                      toast.info(`Selected ${availableItems.length} available item${availableItems.length !== 1 ? 's' : ''}`);
+                    }
+                  }
+                  // Enter to add selected items or select first item
+                  else if (e.key === 'Enter' && selectedItemIds.size > 0) {
                     e.preventDefault();
                     handleAddSelectedItems();
                   } else if (e.key === 'Enter' && suggestedItems.length > 0 && selectedItemIds.size === 0) {
                     e.preventDefault();
                     // Select first item instead of adding immediately
                     handleToggleItemSelection(suggestedItems[0].id);
-                  } else if (e.key === 'ArrowDown' && suggestedItems.length > 0) {
+                  } 
+                  // Escape to clear selection
+                  else if (e.key === 'Escape' && selectedItemIds.size > 0) {
+                    e.preventDefault();
+                    setSelectedItemIds(new Set());
+                    toast.info('Selection cleared');
+                  }
+                  // ArrowDown to focus first suggestion
+                  else if (e.key === 'ArrowDown' && suggestedItems.length > 0) {
                     e.preventDefault();
                     const firstSuggestion = document.querySelector('.suggestion-item');
                     if (firstSuggestion) firstSuggestion.focus();
@@ -1901,7 +1937,8 @@ const SellItem = () => {
                   }
                 }}
               />
-              {suggestedItems.length > 0 && (
+              {/* Old dropdown - hidden, modal is used instead */}
+              {false && suggestedItems.length > 0 && (
                 <>
                 <div className="suggestions item-suggestions">
                     {suggestedItems.map((item, index) => {
@@ -2078,9 +2115,25 @@ const SellItem = () => {
                           onClick={handleAddSelectedItems}
                           className="btn btn-success"
                           disabled={selectedItemIds.size === 0}
+                          aria-disabled={selectedItemIds.size === 0}
+                          aria-label={`Add ${selectedItemIds.size} selected item${selectedItemIds.size !== 1 ? 's' : ''} to cart`}
+                          tabIndex={selectedItemIds.size === 0 ? -1 : 0}
                           style={{ flex: 1 }}
                         >
                           ✓ Add {selectedItemIds.size > 0 ? `${selectedItemIds.size} ` : ''}Selected Item{selectedItemIds.size !== 1 ? 's' : ''}
+                        </button>
+                        <button
+                          onClick={() => {
+                            const availableItems = suggestedItems.filter(item => (item.quantity || 0) > 0);
+                            setSelectedItemIds(new Set(availableItems.map(item => item.id)));
+                          }}
+                          className="btn btn-secondary"
+                          disabled={suggestedItems.filter(item => (item.quantity || 0) > 0).length === 0}
+                          aria-disabled={suggestedItems.filter(item => (item.quantity || 0) > 0).length === 0}
+                          aria-label="Select all available items"
+                          tabIndex={suggestedItems.filter(item => (item.quantity || 0) > 0).length === 0 ? -1 : 0}
+                        >
+                          Select All
                         </button>
                         <button
                           onClick={() => {
@@ -2088,9 +2141,38 @@ const SellItem = () => {
                           }}
                           className="btn btn-secondary"
                           disabled={selectedItemIds.size === 0}
+                          aria-disabled={selectedItemIds.size === 0}
+                          aria-label="Clear all selections"
+                          tabIndex={selectedItemIds.size === 0 ? -1 : 0}
                         >
                           Clear
                         </button>
+                      </div>
+                      <div style={{ 
+                        marginTop: '8px', 
+                        fontSize: '12px', 
+                        color: '#6c757d',
+                        fontStyle: 'italic'
+                      }}>
+                        💡 Tip: Press <kbd style={{ 
+                          padding: '2px 6px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '3px',
+                          fontSize: '11px',
+                          fontFamily: 'monospace'
+                        }}>Ctrl+A</kbd> to select all, <kbd style={{ 
+                          padding: '2px 6px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '3px',
+                          fontSize: '11px',
+                          fontFamily: 'monospace'
+                        }}>Esc</kbd> to clear, <kbd style={{ 
+                          padding: '2px 6px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '3px',
+                          fontSize: '11px',
+                          fontFamily: 'monospace'
+                        }}>Enter</kbd> to add selected
                       </div>
                 </div>
               )}
@@ -2343,6 +2425,17 @@ const SellItem = () => {
             </div>
           )}
       </div>
+      {/* Item Search Modal */}
+      <ItemSearchModal
+        isOpen={showItemSearchModal}
+        onClose={handleModalClose}
+        items={suggestedItems}
+        onItemSelect={handleAddItemToCart}
+        searchQuery={searchQuery}
+        onSearchChange={(value) => dispatch(setSearchQuery(value))}
+        title="Search Items"
+        selectedItems={selectedItems}
+      />
     </Layout>
   );
 };

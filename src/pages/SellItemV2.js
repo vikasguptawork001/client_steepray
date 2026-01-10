@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import LoadingSpinner from '../components/LoadingSpinner';
+import TransactionLoader from '../components/TransactionLoader';
 import { useToast } from '../context/ToastContext';
 import { numberToWords } from '../utils/numberToWords';
 import './SellItemV2.css';
@@ -425,8 +426,22 @@ const SellItemV2 = () => {
     return numberToWords(rounded);
   }, [bill.grandTotal]);
 
+  // Manage body scroll when transaction is processing
+  useEffect(() => {
+    const isProcessing = loading.submit || loading.pdf;
+    if (isProcessing) {
+      document.body.classList.add('transaction-loading');
+    } else {
+      document.body.classList.remove('transaction-loading');
+    }
+    return () => {
+      document.body.classList.remove('transaction-loading');
+    };
+  }, [loading.submit, loading.pdf]);
+
   return (
     <Layout>
+      <TransactionLoader isLoading={loading.submit || loading.pdf} type="sell" />
       <div className="sell2">
         <div className="sell2-header">
           <div>

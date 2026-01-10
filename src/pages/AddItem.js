@@ -1,16 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import TransactionLoader from '../components/TransactionLoader';
 import './AddItem.css';
 
 const AddItem = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
+  const itemSearchInputRef = useRef(null);
   const [buyerParties, setBuyerParties] = useState([]);
   const [selectedBuyer, setSelectedBuyer] = useState('');
   const [buyerInfo, setBuyerInfo] = useState(null);
@@ -22,6 +24,7 @@ const AddItem = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedItems, setSuggestedItems] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
+  const [selectedItemIds, setSelectedItemIds] = useState(new Set()); // For multi-select
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [newItem, setNewItem] = useState({
     product_name: '',
@@ -131,6 +134,86 @@ const AddItem = () => {
     } catch (error) {
       console.error('Error searching items:', error);
     }
+  };
+
+  const handleToggleItemSelection = (itemId) => {
+    setSelectedItemIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleAddSelectedItems = async () => {
+    if (selectedItemIds.size === 0) {
+      toast.warning('Please select at least one item');
+      return;
+    }
+
+    const itemsToAdd = suggestedItems.filter(item => selectedItemIds.has(item.id));
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const item of itemsToAdd) {
+      try {
+        // Fetch full item details from database
+        const response = await apiClient.get(`${config.api.items}/${item.id}`);
+        const fullItemData = response.data.item;
+        
+        // Parse tax_rate
+        const taxRateValue = fullItemData.tax_rate !== undefined && fullItemData.tax_rate !== null
+          ? parseFloat(fullItemData.tax_rate)
+          : 18;
+        const validTaxRates = [5, 18, 28];
+        const finalTaxRate = !isNaN(taxRateValue) && validTaxRates.includes(taxRateValue) 
+          ? taxRateValue 
+          : 18;
+        
+        const existingItem = selectedItems.find(i => i.item_id === item.id);
+        if (existingItem) {
+          // If item already in cart, just increment quantity
+          setSelectedItems(prev => prev.map(i =>
+            i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i
+          ));
+        } else {
+          // Add new item to cart
+          setSelectedItems(prev => [...prev, {
+            item_id: fullItemData.id,
+            product_name: fullItemData.product_name,
+            product_code: fullItemData.product_code || '',
+            brand: fullItemData.brand || '',
+            hsn_number: fullItemData.hsn_number || '',
+            tax_rate: finalTaxRate,
+            sale_rate: fullItemData.sale_rate,
+            purchase_rate: fullItemData.purchase_rate || 0,
+            quantity: 1,
+            alert_quantity: fullItemData.alert_quantity || 0,
+            rack_number: fullItemData.rack_number || '',
+            remarks: fullItemData.remarks || '',
+            current_quantity: fullItemData.quantity || 0
+          }]);
+        }
+        successCount++;
+      } catch (error) {
+        console.error('Error adding item to cart:', error);
+        errorCount++;
+      }
+    }
+    
+    if (successCount > 0) {
+      toast.success(`✓ Added ${successCount} item${successCount !== 1 ? 's' : ''} to purchase list`);
+    }
+    if (errorCount > 0) {
+      toast.error(`Failed to add ${errorCount} item${errorCount !== 1 ? 's' : ''}`);
+    }
+    
+    setSelectedItemIds(new Set());
+    setSearchQuery('');
+    setSuggestedItems([]);
   };
 
   const addItemToCart = async (item) => {
@@ -335,6 +418,7 @@ const AddItem = () => {
 
   return (
     <Layout>
+      <TransactionLoader isLoading={isSubmitting} type="purchase" />
       <div className="add-item">
         <h2>Add Item to Inventory</h2>
         <p style={{ color: '#666', marginBottom: '20px' }}>
@@ -445,22 +529,285 @@ const AddItem = () => {
             <div className="search-wrapper">
               <input
                 type="text"
-                placeholder="Type item name to search..."
+                placeholder="🔍 Type product name, brand, or HSN to search and add items..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (!e.target.value) {
+                    setSelectedItemIds(new Set());
+                  }
+                }}
+                onKeyDown={(e) => {
+                  // Ctrl+A or Cmd+A to select all available items
+                  if ((e.ctrlKey || e.metaKey) && e.key === 'a' && suggestedItems.length > 0) {
+                    e.preventDefault();
+                    const availableItems = suggestedItems.filter(item => (item.quantity || 0) > 0);
+                    if (availableItems.length > 0) {
+                      setSelectedItemIds(new Set(availableItems.map(item => item.id)));
+                      toast.info(`Selected ${availableItems.length} available item${availableItems.length !== 1 ? 's' : ''}`);
+                    }
+                  }
+                  // Enter to add selected items or select first item
+                  else if (e.key === 'Enter' && selectedItemIds.size > 0) {
+                    e.preventDefault();
+                    handleAddSelectedItems();
+                  } else if (e.key === 'Enter' && suggestedItems.length > 0 && selectedItemIds.size === 0) {
+                    e.preventDefault();
+                    // Select first item instead of adding immediately
+                    handleToggleItemSelection(suggestedItems[0].id);
+                  } 
+                  // Escape to clear selection
+                  else if (e.key === 'Escape' && selectedItemIds.size > 0) {
+                    e.preventDefault();
+                    setSelectedItemIds(new Set());
+                    toast.info('Selection cleared');
+                  }
+                  // ArrowDown to focus first suggestion
+                  else if (e.key === 'ArrowDown' && suggestedItems.length > 0) {
+                    e.preventDefault();
+                    const firstSuggestion = document.querySelector('.suggestion-item');
+                    if (firstSuggestion) firstSuggestion.focus();
+                  }
+                }}
+                ref={itemSearchInputRef}
               />
               {suggestedItems.length > 0 && (
-                <div className="suggestions">
-                  {suggestedItems.map(item => (
-                    <div
-                      key={item.id}
-                      className="suggestion-item"
-                      onClick={() => addItemToCart(item)}
-                    >
-                      {item.product_name} - {item.brand} (Qty: {item.quantity})
+                <>
+                  <div className="suggestions">
+                    {suggestedItems.map((item, index) => {
+                      const isOutOfStock = (item.quantity || 0) <= 0;
+                      return (
+                      <div
+                        key={item.id}
+                        className={`suggestion-item ${selectedItemIds.has(item.id) ? 'selected' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
+                        onClick={(e) => {
+                          // Disable selection if out of stock
+                          if (isOutOfStock) {
+                            toast.warning(`⚠️ "${item.product_name}" is out of stock`);
+                            return;
+                          }
+                          // Professional multi-select: clicking row toggles selection
+                          handleToggleItemSelection(item.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (isOutOfStock) {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toast.warning(`⚠️ "${item.product_name}" is out of stock`);
+                              return;
+                            }
+                          }
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            if (!isOutOfStock) {
+                              handleToggleItemSelection(item.id);
+                            }
+                          } else if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            const next = e.target.nextElementSibling;
+                            if (next) next.focus();
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            const prev = e.target.previousElementSibling;
+                            if (prev) prev.focus();
+                            else {
+                              itemSearchInputRef.current?.focus?.({ preventScroll: true });
+                            }
+                          } else if (e.key === 'Escape') {
+                            setSearchQuery('');
+                            setSuggestedItems([]);
+                            setSelectedItemIds(new Set());
+                            itemSearchInputRef.current?.focus?.({ preventScroll: true });
+                          }
+                        }}
+                        tabIndex={isOutOfStock ? -1 : 0}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                          position: 'relative',
+                          opacity: isOutOfStock ? 0.6 : 1
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedItemIds.has(item.id)}
+                            disabled={isOutOfStock}
+                            onChange={(e) => {
+                              if (isOutOfStock) {
+                                e.preventDefault();
+                                return;
+                              }
+                              e.stopPropagation();
+                              handleToggleItemSelection(item.id);
+                            }}
+                            onClick={(e) => {
+                              if (isOutOfStock) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toast.warning(`⚠️ "${item.product_name}" is out of stock`);
+                                return;
+                              }
+                              e.stopPropagation();
+                            }}
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                              accentColor: '#3498db',
+                              flexShrink: 0,
+                              opacity: isOutOfStock ? 0.5 : 1
+                            }}
+                          />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ 
+                              fontWeight: '600', 
+                              color: isOutOfStock ? '#95a5a6' : (selectedItemIds.has(item.id) ? '#2c3e50' : '#2c3e50'), 
+                              fontSize: '14px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px'
+                            }}>
+                              {item.product_name}
+                              {isOutOfStock && (
+                                <span style={{
+                                  fontSize: '10px',
+                                  padding: '2px 6px',
+                                  backgroundColor: '#dc3545',
+                                  color: 'white',
+                                  borderRadius: '4px',
+                                  fontWeight: '600'
+                                }}>
+                                  OUT OF STOCK
+                                </span>
+                              )}
+                              {!isOutOfStock && selectedItemIds.has(item.id) && (
+                                <span style={{
+                                  fontSize: '10px',
+                                  padding: '2px 6px',
+                                  backgroundColor: '#3498db',
+                                  color: 'white',
+                                  borderRadius: '4px',
+                                  fontWeight: '600'
+                                }}>
+                                  SELECTED
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                              {item.brand && <span>{item.brand}</span>}
+                              {item.hsn_number && <span>HSN: {item.hsn_number}</span>}
+                              <span style={{ color: '#27ae60', fontWeight: '600' }}>
+                                ₹{parseFloat(item.purchase_rate || 0).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ 
+                          marginLeft: '12px',
+                          padding: '4px 10px',
+                          backgroundColor: isOutOfStock ? '#f8d7da' : (item.quantity > 0 ? '#d4edda' : '#fff3cd'),
+                          color: isOutOfStock ? '#721c24' : (item.quantity > 0 ? '#155724' : '#856404'),
+                          borderRadius: '12px',
+                          fontSize: '11px',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {isOutOfStock ? 'Out of Stock' : `${item.quantity || 0} available`}
+                        </div>
+                      </div>
+                    );
+                    })}
+                  </div>
+                  {selectedItemIds.size > 0 && (
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '12px 16px',
+                      backgroundColor: '#e3f2fd',
+                      borderRadius: '8px',
+                      border: '1px solid #90caf9'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ 
+                          fontSize: '14px', 
+                          fontWeight: '600', 
+                          color: '#1976d2',
+                          flex: 1
+                        }}>
+                          {selectedItemIds.size} item{selectedItemIds.size !== 1 ? 's' : ''} selected
+                        </span>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button
+                            onClick={handleAddSelectedItems}
+                            className="btn btn-success"
+                            disabled={selectedItemIds.size === 0}
+                            aria-disabled={selectedItemIds.size === 0}
+                            aria-label={`Add ${selectedItemIds.size} selected item${selectedItemIds.size !== 1 ? 's' : ''} to purchase list`}
+                            tabIndex={selectedItemIds.size === 0 ? -1 : 0}
+                            style={{ padding: '8px 16px', fontSize: '13px' }}
+                          >
+                            ✓ Add {selectedItemIds.size > 0 ? `${selectedItemIds.size} ` : ''}Selected
+                          </button>
+                          <button
+                            onClick={() => {
+                              const availableItems = suggestedItems.filter(item => (item.quantity || 0) > 0);
+                              setSelectedItemIds(new Set(availableItems.map(item => item.id)));
+                            }}
+                            className="btn btn-secondary"
+                            disabled={suggestedItems.filter(item => (item.quantity || 0) > 0).length === 0}
+                            aria-disabled={suggestedItems.filter(item => (item.quantity || 0) > 0).length === 0}
+                            aria-label="Select all available items"
+                            tabIndex={suggestedItems.filter(item => (item.quantity || 0) > 0).length === 0 ? -1 : 0}
+                            style={{ padding: '8px 16px', fontSize: '13px' }}
+                          >
+                            Select All
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedItemIds(new Set());
+                            }}
+                            className="btn btn-secondary"
+                            disabled={selectedItemIds.size === 0}
+                            aria-disabled={selectedItemIds.size === 0}
+                            aria-label="Clear all selections"
+                            tabIndex={selectedItemIds.size === 0 ? -1 : 0}
+                            style={{ padding: '8px 16px', fontSize: '13px' }}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ 
+                        marginTop: '8px', 
+                        fontSize: '12px', 
+                        color: '#6c757d',
+                        fontStyle: 'italic'
+                      }}>
+                        💡 Tip: Press <kbd style={{ 
+                          padding: '2px 6px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '3px',
+                          fontSize: '11px',
+                          fontFamily: 'monospace'
+                        }}>Ctrl+A</kbd> to select all, <kbd style={{ 
+                          padding: '2px 6px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '3px',
+                          fontSize: '11px',
+                          fontFamily: 'monospace'
+                        }}>Esc</kbd> to clear, <kbd style={{ 
+                          padding: '2px 6px', 
+                          backgroundColor: '#f0f0f0', 
+                          borderRadius: '3px',
+                          fontSize: '11px',
+                          fontFamily: 'monospace'
+                        }}>Enter</kbd> to add selected
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
               {searchQuery.length >= 2 && suggestedItems.length === 0 && (
                 <div className="suggestions">

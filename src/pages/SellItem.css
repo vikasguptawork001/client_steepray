@@ -369,6 +369,17 @@ input[type="number"] {
   }
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .newly-added-item {
   animation: highlightNewItem 1s ease-out;
 }
@@ -493,6 +504,16 @@ input[type="number"] {
   border: 1px solid #e1e8ed;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  line-height: 1.6;
+}
+
+/* Better spacing for bill preview content */
+.bill-preview > * {
+  margin-bottom: 20px;
+}
+
+.bill-preview > *:last-child {
+  margin-bottom: 0;
 }
 
 .bill-preview:focus {
@@ -604,6 +625,37 @@ input[type="number"] {
   outline: none;
   border-color: #3498db;
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+/* Professional Payment Controls Grid */
+.payment-controls-grid {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 20px;
+  align-items: center;
+}
+
+/* Responsive Payment Section */
+@media (max-width: 1200px) {
+  .payment-controls-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 15px !important;
+  }
+  
+  .payment-controls-grid > div:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .payment-controls-grid {
+    grid-template-columns: 1fr !important;
+    gap: 15px !important;
+  }
+  
+  .payment-controls-grid > div:nth-child(3) {
+    flex-direction: column !important;
+  }
 }
 
 /* ============================================
@@ -793,21 +845,109 @@ input[type="number"] {
 
 /* Print Styles */
 @media print {
+  /* Hide everything except bill preview */
+  body * {
+    visibility: hidden;
+  }
+  
+  #bill-print-content,
+  #bill-print-content * {
+    visibility: visible;
+  }
+  
+  #bill-print-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 20px;
+    margin: 0;
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    page-break-inside: avoid;
+  }
+  
+  /* Hide action buttons and UI elements in print */
   .preview-header,
   .preview-actions,
-  .payment-section button {
+  .payment-section button,
+  button[aria-label*="Scroll to top"],
+  button[aria-label*="Copy bill number"],
+  button[aria-label*="Back to Edit"],
+  button[aria-label*="New Sale"] {
     display: none !important;
+    visibility: hidden !important;
   }
   
   .bill-preview {
     box-shadow: none;
-    padding: 0;
+    padding: 20px;
     border: none;
     max-height: none !important;
     overflow: visible !important;
+    page-break-inside: avoid;
+  }
+  
+  .bill-header {
+    page-break-after: avoid;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+  }
+  
+  /* Table print optimization */
+  .bill-preview-table {
+    page-break-inside: auto;
+  }
+  
+  .bill-preview-table tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  
+  .bill-preview-table thead {
+    display: table-header-group;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color-adjust: exact;
+  }
+  
+  .bill-preview-table tfoot {
+    display: table-footer-group;
+  }
+  
+  /* Hide input fields in print, show values */
+  .bill-preview input[type="number"],
+  .bill-preview input[type="text"],
+  .bill-preview select {
+    border: none;
+    background: transparent;
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+  }
+  
+  /* Summary boxes print styling */
+  .summary-box {
+    page-break-inside: avoid;
+    margin-top: 20px;
+  }
+  
+  /* Remove gradients and shadows for print */
+  .summary-box > div {
+    background: white !important;
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
   }
   
   .sell-item {
     padding: 0;
+  }
+  
+  /* Ensure proper page breaks */
+  @page {
+    margin: 1cm;
+    size: A4;
   }
 }

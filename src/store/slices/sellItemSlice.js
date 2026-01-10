@@ -44,7 +44,6 @@ export const calculatePreview = createAsyncThunk(
   async ({ selectedItems, sellerInfo, withGst, payPreviousBalance, previousBalancePaid, paymentStatus, paidAmount }, { rejectWithValue }) => {
     // Automatically include previous balance if seller has balance
     const previousBalance = parseFloat(sellerInfo?.balance_amount || 0);
-    const effectivePayPreviousBalance = previousBalance > 0;
     const effectivePreviousBalancePaid = previousBalance > 0 ? previousBalance : 0;
     try {
       // Fetch latest stock info for all items
@@ -261,8 +260,12 @@ const sellItemSlice = createSlice({
   reducers: {
     // Seller party actions
     setSelectedSeller: (state, action) => {
-      state.selectedSeller = action.payload;
-      state.sellerInfo = null;
+      const newSellerId = action.payload;
+      // Only clear sellerInfo if we're selecting a different seller
+      if (state.selectedSeller !== newSellerId) {
+        state.sellerInfo = null;
+      }
+      state.selectedSeller = newSellerId;
     },
     setSellerSearchQuery: (state, action) => {
       state.sellerSearchQuery = action.payload;
@@ -286,6 +289,10 @@ const sellItemSlice = createSlice({
     },
     selectSellerParty: (state, action) => {
       const party = action.payload;
+      // Only clear sellerInfo if we're selecting a different seller
+      if (state.selectedSeller !== party.id) {
+        state.sellerInfo = null;
+      }
       state.selectedSeller = party.id;
       state.sellerSearchQuery = party.party_name;
       state.showSellerSuggestions = false;
@@ -658,7 +665,25 @@ const sellItemSlice = createSlice({
         state.selectedItems = action.payload.items;
         // Update payment status and paid amount based on preview data
         state.paymentStatus = action.payload.paymentStatus || state.paymentStatus;
-        state.paidAmount = action.payload.paidAmount || 0;
+        // For partially_paid, preserve the current paidAmount from state if user is typing
+        // Only update if paymentStatus is fully_paid (which should set it to grandTotal)
+        // or if the payload explicitly has a different value for partially_paid
+        if (action.payload.paymentStatus === 'fully_paid') {
+          // For fully_paid, always set to grandTotal
+          state.paidAmount = action.payload.paidAmount || 0;
+        } else if (action.payload.paymentStatus === 'partially_paid') {
+          // For partially_paid, only update if the payload has a valid paidAmount
+          // This allows user input to persist while typing
+          if (action.payload.paidAmount !== undefined && action.payload.paidAmount !== null) {
+            state.paidAmount = action.payload.paidAmount;
+          }
+          // Otherwise, keep the current state.paidAmount (user's input)
+        } else {
+          // Fallback: update if provided
+          if (action.payload.paidAmount !== undefined) {
+            state.paidAmount = action.payload.paidAmount;
+          }
+        }
       })
       .addCase(calculatePreview.rejected, (state, action) => {
         state.previewLoading = false;

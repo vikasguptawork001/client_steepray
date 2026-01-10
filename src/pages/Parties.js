@@ -5,6 +5,7 @@ import config from '../config/config';
 import { useToast } from '../context/ToastContext';
 import { Link } from 'react-router-dom';
 import { getLocalDateString } from '../utils/dateUtils';
+import TransactionLoader from '../components/TransactionLoader';
 import './Party.css';
 
 const Parties = () => {
@@ -35,6 +36,18 @@ const Parties = () => {
   const [transactionDetails, setTransactionDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // Manage body scroll when transaction is processing
+  useEffect(() => {
+    if (processingPayment) {
+      document.body.classList.add('transaction-loading');
+    } else {
+      document.body.classList.remove('transaction-loading');
+    }
+    return () => {
+      document.body.classList.remove('transaction-loading');
+    };
+  }, [processingPayment]);
 
   useEffect(() => {
     fetchParties();
@@ -306,6 +319,7 @@ const Parties = () => {
 
   return (
     <Layout>
+      <TransactionLoader isLoading={processingPayment} type="payment" />
       <div className="parties-page">
         <div className="parties-header">
           <h2>Parties</h2>
@@ -657,7 +671,7 @@ const Parties = () => {
                         <tbody>
                           {transactionHistory.map((txn, idx) => (
                             <tr key={idx}>
-                              <td>{txn.transaction_timestamp}</td>
+                             {new Date(txn.transaction_timestamp).toISOString()}
                               <td>
                                 <span style={{
                                   padding: '4px 8px',
