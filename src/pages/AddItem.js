@@ -194,13 +194,13 @@ const AddItem = () => {
             brand: fullItemData.brand || '',
             hsn_number: fullItemData.hsn_number || '',
             tax_rate: finalTaxRate,
-            sale_rate: fullItemData.sale_rate,
-            purchase_rate: fullItemData.purchase_rate || 0,
+            sale_rate: parseFloat(fullItemData.sale_rate) || 0,
+            purchase_rate: parseFloat(fullItemData.purchase_rate) || 0,
             quantity: 1,
-            alert_quantity: fullItemData.alert_quantity || 0,
+            alert_quantity: parseInt(fullItemData.alert_quantity) || 0,
             rack_number: fullItemData.rack_number || '',
             remarks: fullItemData.remarks || '',
-            current_quantity: fullItemData.quantity || 0
+            current_quantity: parseInt(fullItemData.quantity) || 0
           }]);
         }
         successCount++;
@@ -260,13 +260,13 @@ const AddItem = () => {
           brand: fullItemData.brand || '',
           hsn_number: fullItemData.hsn_number || '',
           tax_rate: finalTaxRate, // Use the parsed and validated tax rate
-          sale_rate: fullItemData.sale_rate,
-          purchase_rate: fullItemData.purchase_rate || 0,
+          sale_rate: parseFloat(fullItemData.sale_rate) || 0,
+          purchase_rate: parseFloat(fullItemData.purchase_rate) || 0,
           quantity: 1, // Only this field will be editable
-          alert_quantity: fullItemData.alert_quantity || 0,
+          alert_quantity: parseInt(fullItemData.alert_quantity) || 0,
           rack_number: fullItemData.rack_number || '',
           remarks: fullItemData.remarks || '',
-          current_quantity: fullItemData.quantity || 0 // Store current quantity for reference
+          current_quantity: parseInt(fullItemData.quantity) || 0 // Store current quantity for reference
         }]);
       }
       

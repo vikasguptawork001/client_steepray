@@ -174,11 +174,11 @@ export const submitSale = createAsyncThunk(
         seller_party_id: previewData.selectedSeller || selectedSeller,
         items: previewData.items.map(item => ({
           item_id: item.item_id,
-          quantity: item.quantity,
-          sale_rate: item.sale_rate,
-          discount: item.itemDiscount || 0,
+          quantity: parseInt(item.quantity) || 0,
+          sale_rate: parseFloat(item.sale_rate) || 0,
+          discount: parseFloat(item.itemDiscount) || 0,
           discount_type: item.discount_type || 'amount',
-          discount_percentage: item.discount_percentage || null
+          discount_percentage: item.discount_percentage !== null && item.discount_percentage !== undefined ? parseFloat(item.discount_percentage) : null
         })),
         payment_status: previewData.paymentStatus,
         paid_amount: previewData.paidAmount,
@@ -317,11 +317,11 @@ const sellItemSlice = createSlice({
         state.selectedItems.push({
           item_id: item.id,
           product_name: item.product_name,
-          sale_rate: item.sale_rate,
-          tax_rate: item.tax_rate || 0,
+          sale_rate: parseFloat(item.sale_rate) || 0,
+          tax_rate: parseFloat(item.tax_rate) || 0,
           hsn_number: item.hsn_number || '',
           quantity: 1,
-          available_quantity: item.quantity || 0,
+          available_quantity: parseInt(item.quantity) || 0,
           discount: 0,
           discount_type: 'percentage',
           discount_percentage: null

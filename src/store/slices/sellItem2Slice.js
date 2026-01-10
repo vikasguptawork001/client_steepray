@@ -106,7 +106,7 @@ const sellItem2Slice = createSlice({
         state.cartItems.push({
           ...item,
           quantity: 1,
-          sale_rate: item.sale_rate || 0
+          sale_rate: parseFloat(item.sale_rate) || 0
         });
       }
     },

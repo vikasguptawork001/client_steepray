@@ -241,7 +241,7 @@ const Dashboard = () => {
         items: [{
           item_id: quickSaleItem.id,
           quantity: qty,
-          sale_rate: quickSaleItem.sale_rate
+          sale_rate: parseFloat(quickSaleItem.sale_rate) || 0
         }],
         payment_status: 'fully_paid',
         paid_amount: quickSaleItem.sale_rate * qty,
@@ -287,11 +287,11 @@ const Dashboard = () => {
       product_code: item.product_code || '',
       brand: item.brand || '',
       hsn_number: item.hsn_number || '',
-      tax_rate: item.tax_rate && [5, 18, 28].includes(item.tax_rate) ? item.tax_rate : 18,
-      sale_rate: item.sale_rate || 0,
-      purchase_rate: item.purchase_rate || 0,
-      quantity: item.quantity || 0,
-      alert_quantity: item.alert_quantity || 0,
+      tax_rate: item.tax_rate && [5, 18, 28].includes(parseFloat(item.tax_rate)) ? parseFloat(item.tax_rate) : 18,
+      sale_rate: parseFloat(item.sale_rate) || 0,
+      purchase_rate: parseFloat(item.purchase_rate) || 0,
+      quantity: parseInt(item.quantity) || 0,
+      alert_quantity: parseInt(item.alert_quantity) || 0,
       rack_number: item.rack_number || '',
       remarks: item.remarks || ''
     };
@@ -399,7 +399,13 @@ const Dashboard = () => {
         if (key === 'image') {
           formData.append('image', changedFields[key]);
         } else if (changedFields[key] !== null && changedFields[key] !== undefined) {
-          formData.append(key, changedFields[key]);
+          // Ensure numeric fields are sent as numbers (FormData will convert to string, but backend expects numeric strings)
+          if (['sale_rate', 'purchase_rate', 'quantity', 'alert_quantity', 'tax_rate'].includes(key)) {
+            const numValue = parseFloat(changedFields[key]);
+            formData.append(key, isNaN(numValue) ? '0' : numValue.toString());
+          } else {
+            formData.append(key, changedFields[key]);
+          }
         }
       });
       

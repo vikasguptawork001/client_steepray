@@ -264,7 +264,7 @@ const SellItemV2 = () => {
           hsn_number: item.hsn_number || '',
           tax_rate: item.tax_rate || 0,
           available_quantity: item.quantity || 0,
-          sale_rate: item.sale_rate || 0,
+          sale_rate: parseFloat(item.sale_rate) || 0,
           quantity: 1,
           discount_type: 'percentage',
           discount_percentage: null,
@@ -695,7 +695,10 @@ const SellItemV2 = () => {
                                 <input
                                   className="sell2-mini-input"
                                   value={it.quantity}
-                                  onChange={(e) => updateCartItem(it.item_id, { quantity: e.target.value })}
+                                  onChange={(e) => {
+                                    const qty = parseInt(e.target.value) || 1;
+                                    updateCartItem(it.item_id, { quantity: qty });
+                                  }}
                                   inputMode="decimal"
                                 />
                               </td>
@@ -703,7 +706,10 @@ const SellItemV2 = () => {
                                 <input
                                   className="sell2-mini-input"
                                   value={it.sale_rate}
-                                  onChange={(e) => updateCartItem(it.item_id, { sale_rate: e.target.value })}
+                                  onChange={(e) => {
+                                    const rate = parseFloat(e.target.value) || 0;
+                                    updateCartItem(it.item_id, { sale_rate: rate });
+                                  }}
                                   inputMode="decimal"
                                 />
                               </td>
@@ -730,7 +736,10 @@ const SellItemV2 = () => {
                                       className="sell2-mini-input"
                                       style={{ width: 90 }}
                                       value={it.discount_percentage ?? ''}
-                                      onChange={(e) => updateCartItem(it.item_id, { discount_percentage: e.target.value })}
+                                      onChange={(e) => {
+                                        const pct = parseFloat(e.target.value) || 0;
+                                        updateCartItem(it.item_id, { discount_percentage: pct });
+                                      }}
                                       inputMode="decimal"
                                       placeholder="%"
                                     />
@@ -739,7 +748,10 @@ const SellItemV2 = () => {
                                       className="sell2-mini-input"
                                       style={{ width: 110 }}
                                       value={it.discount ?? ''}
-                                      onChange={(e) => updateCartItem(it.item_id, { discount: e.target.value })}
+                                      onChange={(e) => {
+                                        const disc = parseFloat(e.target.value) || 0;
+                                        updateCartItem(it.item_id, { discount: disc });
+                                      }}
                                       inputMode="decimal"
                                       placeholder="₹"
                                     />
@@ -751,7 +763,10 @@ const SellItemV2 = () => {
                                   className="sell2-mini-input"
                                   style={{ width: 90 }}
                                   value={it.tax_rate}
-                                  onChange={(e) => updateCartItem(it.item_id, { tax_rate: e.target.value })}
+                                  onChange={(e) => {
+                                    const tax = parseFloat(e.target.value) || 0;
+                                    updateCartItem(it.item_id, { tax_rate: tax });
+                                  }}
                                   inputMode="decimal"
                                 />
                               </td>
