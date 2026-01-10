@@ -1,5 +1,6 @@
 import axios from 'axios';
 import config from './config';
+import { secureStorage } from '../utils/encryption';
 
 // Create axios instance with base URL
 const apiClient = axios.create({
@@ -13,7 +14,8 @@ const apiClient = axios.create({
 // Request interceptor to add auth token
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    // Get token from secure storage
+    const token = secureStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -40,9 +42,9 @@ apiClient.interceptors.response.use(
       errorMessage.toLowerCase().includes('unauthorized');
     
     if (isAuthError) {
-      // Clear authentication data
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      // Clear authentication data from secure storage
+      secureStorage.removeItem('token');
+      secureStorage.removeItem('user');
       
       // Redirect to login page
       // Only redirect if not already on login page to avoid redirect loops

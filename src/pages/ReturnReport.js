@@ -4,6 +4,7 @@ import apiClient from '../config/axios';
 import config from '../config/config';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { getLocalDateString } from '../utils/dateUtils';
 import './Report.css';
 
 const ReturnReport = () => {
@@ -26,8 +27,8 @@ const ReturnReport = () => {
   const fetchReport = async () => {
     try {
       setLoading(true);
-      const from = fromDate.toISOString().split('T')[0];
-      const to = toDate.toISOString().split('T')[0];
+      const from = getLocalDateString(fromDate);
+      const to = getLocalDateString(toDate);
       const params = { from_date: from, to_date: to, page, limit };
       if (partyType) {
         params.party_type = partyType;
@@ -47,8 +48,8 @@ const ReturnReport = () => {
     if (exporting) return;
     setExporting(true);
     try {
-      const from = fromDate.toISOString().split('T')[0];
-      const to = toDate.toISOString().split('T')[0];
+      const from = getLocalDateString(fromDate);
+      const to = getLocalDateString(toDate);
       const params = { from_date: from, to_date: to };
       if (partyType) {
         params.party_type = partyType;
@@ -98,7 +99,7 @@ const ReturnReport = () => {
               <DatePicker
                 selected={fromDate}
                 onChange={(date) => setFromDate(date)}
-                dateFormat="yyyy-MM-dd"
+                dateFormat="dd-MM-yyyy"
                 className="date-input"
               />
             </div>
@@ -107,7 +108,7 @@ const ReturnReport = () => {
               <DatePicker
                 selected={toDate}
                 onChange={(date) => setToDate(date)}
-                dateFormat="yyyy-MM-dd"
+                dateFormat="dd-MM-yyyy"
                 className="date-input"
               />
             </div>
@@ -167,13 +168,13 @@ const ReturnReport = () => {
               <thead>
                 <tr>
                   <th>Date</th>
+                  <th>Bill Number</th>
                   <th>Party Type</th>
                   <th>Party Name</th>
-                  <th>Product Name</th>
-                  <th>Brand</th>
-                  <th>Quantity</th>
-                  <th>Return Amount</th>
+                  <th>Items Summary</th>
+                  <th>Total Return Amount</th>
                   <th>Reason</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -184,7 +185,8 @@ const ReturnReport = () => {
                 ) : (
                   transactions.map((txn) => (
                     <tr key={txn.id}>
-                      <td>{new Date(txn.return_date).toLocaleDateString()}</td>
+                      <td>{new Date(txn.return_date).toLocaleString()}</td>
+                      <td>{txn.bill_number || '-'}</td>
                       <td>
                         <span style={{
                           padding: '4px 8px',
@@ -198,11 +200,37 @@ const ReturnReport = () => {
                         </span>
                       </td>
                       <td>{txn.party_name}</td>
-                      <td>{txn.product_name}</td>
-                      <td>{txn.brand}</td>
-                      <td>{txn.quantity}</td>
-                      <td>₹{txn.return_amount}</td>
+                      <td>
+                        <div style={{ maxWidth: '300px' }}>
+                          {txn.items_summary ? (
+                            <div>
+                              <div style={{ fontWeight: '500', marginBottom: '4px' }}>
+                                {txn.item_count || 0} item(s)
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+                                {txn.items_summary}
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#999' }}>No items</span>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ fontWeight: '600' }}>₹{parseFloat(txn.return_amount || 0).toFixed(2)}</td>
                       <td>{txn.reason || '-'}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        {txn.bill_number && (
+                          <a
+                            href={`${config.api.baseUrl}/api/bills/return/${txn.id}/pdf?party_type=${txn.party_type}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-sm btn-primary"
+                            style={{ padding: '4px 12px', fontSize: '12px', textDecoration: 'none', display: 'inline-block' }}
+                          >
+                            View Bill
+                          </a>
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}

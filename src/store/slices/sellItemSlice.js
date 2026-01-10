@@ -42,6 +42,10 @@ export const searchItems = createAsyncThunk(
 export const calculatePreview = createAsyncThunk(
   'sellItem/calculatePreview',
   async ({ selectedItems, sellerInfo, withGst, payPreviousBalance, previousBalancePaid, paymentStatus, paidAmount }, { rejectWithValue }) => {
+    // Automatically include previous balance if seller has balance
+    const previousBalance = parseFloat(sellerInfo?.balance_amount || 0);
+    const effectivePayPreviousBalance = previousBalance > 0;
+    const effectivePreviousBalancePaid = previousBalance > 0 ? previousBalance : 0;
     try {
       // Fetch latest stock info for all items
       const itemsWithStock = await Promise.all(selectedItems.map(async (item) => {
@@ -138,8 +142,8 @@ export const calculatePreview = createAsyncThunk(
       
       // Calculate final total (matching backend logic)
       const invoiceTotal = withGst ? (subtotal + totalTax) : subtotal;
-      const previousBalance = parseFloat(sellerInfo?.balance_amount || 0);
-      const prevBalanceToPay = payPreviousBalance ? Math.min(previousBalancePaid || previousBalance, previousBalance) : 0;
+      // Use the effective values (automatically calculated above)
+      const prevBalanceToPay = effectivePreviousBalancePaid;
       const grandTotal = invoiceTotal + prevBalanceToPay;
       
       return {
@@ -316,8 +320,6 @@ const sellItemSlice = createSlice({
           discount_percentage: null
         });
       }
-      state.searchQuery = '';
-      state.suggestedItems = [];
     },
     updateItemQuantity: (state, action) => {
       const { itemId, quantity } = action.payload;
@@ -505,9 +507,9 @@ const sellItemSlice = createSlice({
       const totalTax = updatedItems.reduce((sum, item) => sum + (item.taxAmount || 0), 0);
       const total = state.previewData.withGst ? (totalTaxableValue + totalTax) : totalTaxableValue;
       
-      // Add previous balance if paying it
+      // Automatically add previous balance if it exists
       const previousBalance = parseFloat(state.previewData.previousBalance || 0);
-      const prevBalanceToPay = state.payPreviousBalance ? Math.min(state.previousBalancePaid || previousBalance, previousBalance) : 0;
+      const prevBalanceToPay = previousBalance > 0 ? previousBalance : 0;
       const grandTotal = total + prevBalanceToPay;
       
       state.previewData = {

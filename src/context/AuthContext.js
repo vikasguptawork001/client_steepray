@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import apiClient from '../config/axios';
 import config from '../config/config';
+import { encryptCredentials, secureStorage } from '../utils/encryption';
 
 const AuthContext = createContext();
 
@@ -17,24 +18,27 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
+    // Decrypt and load user data from secure storage
+    const token = secureStorage.getItem('token');
+    const userData = secureStorage.getItem('user');
     if (token && userData) {
-      setUser(JSON.parse(userData));
+      setUser(userData);
     }
     setLoading(false);
   }, []);
 
   const login = async (user_id, password) => {
     try {
-      const response = await apiClient.post(config.api.login, {
-        user_id,
-        password
-      });
+      // Encrypt credentials before sending over network
+      const encryptedCredentials = encryptCredentials(user_id, password);
+      
+      const response = await apiClient.post(config.api.login, encryptedCredentials);
 
       const { token, user } = response.data;
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
+      
+      // Store encrypted data in localStorage
+      secureStorage.setItem('token', token);
+      secureStorage.setItem('user', user);
       setUser(user);
       return { success: true };
     } catch (error) {
@@ -46,8 +50,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    secureStorage.removeItem('token');
+    secureStorage.removeItem('user');
     setUser(null);
   };
 

@@ -47,7 +47,7 @@ const Layout = ({ children }) => {
     <div className="layout">
       <header className="header">
         <div className="header-content">
-          <h1>Steepray Info Solutions</h1>
+          <h1>Steepray Information Services Private Limited</h1>
           <div className="header-right">
             <span className="user-info">
               {user?.user_id} ({getRoleLabel(user?.role)})
@@ -93,7 +93,7 @@ const Layout = ({ children }) => {
           </div>
           <div className="footer-section">
             <p className="footer-credits">
-              Designed and Developed by <strong>Steepray Info Solutions</strong>
+              Designed and Developed by <strong>Steepray Information Services Private Limited</strong>
             </p>
           </div>
         </div>

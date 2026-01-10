@@ -4,6 +4,7 @@ import apiClient from '../config/axios';
 import config from '../config/config';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { getLocalDateString } from '../utils/dateUtils';
 import './Report.css';
 
 const ItemWiseSellReport = () => {
@@ -20,8 +21,8 @@ const ItemWiseSellReport = () => {
   const [pagination, setPagination] = useState(null);
 
   const params = useMemo(() => {
-    const from = fromDate.toISOString().split('T')[0];
-    const to = toDate.toISOString().split('T')[0];
+    const from = getLocalDateString(fromDate);
+    const to = getLocalDateString(toDate);
     return {
       from_date: from,
       to_date: to,
@@ -80,14 +81,9 @@ const ItemWiseSellReport = () => {
       <div className="report">
         <div className="report-header">
           <h2>Item-wise Sell Report</h2>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={() => window.print()} className="btn btn-secondary">
-              Print
-            </button>
-            <button onClick={exportToExcel} className="btn btn-success">
-              Export to Excel
-            </button>
-          </div>
+          <button onClick={exportToExcel} className="btn btn-success">
+            Export to Excel
+          </button>
         </div>
 
         <div className="card">
@@ -97,7 +93,7 @@ const ItemWiseSellReport = () => {
               <DatePicker
                 selected={fromDate}
                 onChange={(date) => setFromDate(date)}
-                dateFormat="yyyy-MM-dd"
+                dateFormat="dd-MM-yyyy"
                 className="date-input"
               />
             </div>
@@ -106,7 +102,7 @@ const ItemWiseSellReport = () => {
               <DatePicker
                 selected={toDate}
                 onChange={(date) => setToDate(date)}
-                dateFormat="yyyy-MM-dd"
+                dateFormat="dd-MM-yyyy"
                 className="date-input"
               />
             </div>

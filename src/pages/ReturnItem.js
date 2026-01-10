@@ -19,11 +19,13 @@ const ReturnItem = () => {
   const [selectedItems, setSelectedItems] = useState([]); // Array of items to return
   const [returnData, setReturnData] = useState({
     reason: '',
-    return_type: 'cash' // 'cash' or 'adjust'
+    return_type: 'adjust' // 'cash' or 'adjust'
   });
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [warningData, setWarningData] = useState(null);
 
   useEffect(() => {
     fetchSellerParties();
@@ -136,6 +138,7 @@ const ReturnItem = () => {
           product_code: fullItemData.product_code || '',
           brand: fullItemData.brand || '',
           sale_rate: parseFloat(fullItemData.sale_rate || 0),
+          purchase_rate: parseFloat(fullItemData.purchase_rate || 0),
           quantity: 1,
           available_quantity: fullItemData.quantity || 0,
           discount: 0,
@@ -171,9 +174,11 @@ const ReturnItem = () => {
 
   const calculateTotal = () => {
     return selectedItems.reduce((sum, item) => {
-      const saleRate = parseFloat(item.sale_rate) || 0;
+      const rate = partyType === 'buyer'
+        ? (parseFloat(item.purchase_rate) || 0)
+        : (parseFloat(item.sale_rate) || 0);
       const quantity = parseInt(item.quantity) || 0;
-      const itemTotal = saleRate * quantity;
+      const itemTotal = rate * quantity;
       
       // Calculate discount
       let itemDiscount = 0;
@@ -236,9 +241,11 @@ const ReturnItem = () => {
       }
     }
     const totalAmount = validItems.reduce((sum, item) => {
-      const saleRate = parseFloat(item.sale_rate) || 0;
+      const rate = partyType === 'buyer'
+        ? (parseFloat(item.purchase_rate) || 0)
+        : (parseFloat(item.sale_rate) || 0);
       const quantity = parseInt(item.quantity) || 0;
-      const itemTotal = saleRate * quantity;
+      const itemTotal = rate * quantity;
       
       // Calculate discount
       let itemDiscount = 0;
@@ -253,9 +260,11 @@ const ReturnItem = () => {
     }, 0);
     
     const items = validItems.map(item => {
-      const saleRate = parseFloat(item.sale_rate || 0);
+      const rate = partyType === 'buyer'
+        ? (parseFloat(item.purchase_rate) || 0)
+        : (parseFloat(item.sale_rate) || 0);
       const quantity = parseInt(item.quantity || 0);
-      const itemTotal = saleRate * quantity;
+      const itemTotal = rate * quantity;
       
       // Calculate discount
       let itemDiscount = 0;
@@ -273,6 +282,7 @@ const ReturnItem = () => {
         brand: item.brand,
         product_code: item.product_code,
         sale_rate: item.sale_rate,
+        purchase_rate: item.purchase_rate,
         quantity: item.quantity,
         return_amount: returnAmount,
         discount: itemDiscount,
@@ -282,6 +292,24 @@ const ReturnItem = () => {
       };
     });
 
+    // Check if return amount exceeds balance for seller returns with adjust type
+    let warningInfo = null;
+    if (partyType === 'seller' && returnData.return_type === 'adjust' && selectedPartyInfo?.balance_amount !== undefined) {
+      const currentBalance = parseFloat(selectedPartyInfo.balance_amount || 0);
+      if (totalAmount > currentBalance) {
+        const adjustmentAmount = currentBalance;
+        const cashPaymentRequired = totalAmount - currentBalance;
+        warningInfo = {
+          requires_cash_payment: true,
+          return_amount: totalAmount,
+          current_balance: currentBalance,
+          adjustment_amount: adjustmentAmount,
+          cash_payment_required: cashPaymentRequired,
+          message: `Return amount (₹${totalAmount.toFixed(2)}) exceeds current balance (₹${currentBalance.toFixed(2)}). You need to pay ₹${cashPaymentRequired.toFixed(2)} in cash to the seller, and ₹${adjustmentAmount.toFixed(2)} will be adjusted in the account.`
+        };
+      }
+    }
+
     const preview = {
       partyType,
       partyName: selectedPartyInfo?.party_name || '',
@@ -289,7 +317,8 @@ const ReturnItem = () => {
       items: items,
       reason: returnData.reason,
       returnType: returnData.return_type,
-      totalAmount: totalAmount
+      totalAmount: totalAmount,
+      warning: warningInfo
     };
 
     setPreviewData(preview);
@@ -310,6 +339,23 @@ const ReturnItem = () => {
       return;
     }
 
+    // Check if warning is needed and show confirmation modal
+    if (previewData.warning && previewData.warning.requires_cash_payment) {
+      setWarningData(previewData.warning);
+      setShowWarningModal(true);
+      return;
+    }
+
+    await processReturn();
+  };
+
+  const handleConfirmReturn = async () => {
+    setShowWarningModal(false);
+    await processReturn();
+  };
+
+  const processReturn = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
     try {
       const requestData = {
@@ -332,8 +378,42 @@ const ReturnItem = () => {
         requestData.buyer_party_id = selectedParty;
       }
 
-      await apiClient.post(config.api.return, requestData);
-      toast.success('Return processed successfully!');
+      const response = await apiClient.post(config.api.return, requestData);
+      
+      // Check if API returned a warning (should match our preview warning)
+      if (response.data.warning && response.data.warning.requires_cash_payment) {
+        toast.warning(response.data.warning.message);
+      } else {
+        toast.success('Return processed successfully!');
+      }
+      
+      // Generate and download return bill PDF if return_transaction_id is available
+      if (response.data.return_transaction_id && response.data.bill_number) {
+        try {
+          const pdfUrl = `${config.api.baseUrl}/api/bills/return/${response.data.return_transaction_id}/pdf?party_type=${partyType}`;
+          
+          const pdfResponse = await apiClient.get(
+            `/api/bills/return/${response.data.return_transaction_id}/pdf?party_type=${partyType}`,
+            { responseType: 'blob' }
+          );
+          
+          // Create blob URL and download
+          const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `return_bill_${response.data.bill_number}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+          
+          toast.success('Return bill downloaded!');
+        } catch (pdfError) {
+          console.error('Error downloading return bill:', pdfError);
+          toast.error('Return processed but failed to download bill');
+        }
+      }
       
       // Reset form
       setSelectedItems([]);
@@ -343,7 +423,7 @@ const ReturnItem = () => {
       setShowPartySuggestions(false);
       setReturnData({
         reason: '',
-        return_type: 'cash'
+        return_type: 'adjust'
       });
       setSearchQuery('');
       setShowPreview(false);
@@ -522,7 +602,9 @@ const ReturnItem = () => {
                         <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Product Name</th>
                         <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Brand</th>
                         <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Available Qty</th>
-                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Sale Rate</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>
+                          {partyType === 'buyer' ? 'Purchase Rate' : 'Sale Rate'}
+                        </th>
                         <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Return Qty</th>
                         <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Discount</th>
                         <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600', color: 'white', backgroundColor: '#34495e' }}>Return Amount</th>
@@ -539,7 +621,12 @@ const ReturnItem = () => {
                           <td>{item.product_name}</td>
                           <td>{item.brand || '-'}</td>
                           <td>{item.available_quantity}</td>
-                          <td>₹{parseFloat(item.sale_rate || 0).toFixed(2)}</td>
+                          <td>
+                            ₹{(partyType === 'buyer'
+                              ? parseFloat(item.purchase_rate || 0)
+                              : parseFloat(item.sale_rate || 0)
+                            ).toFixed(2)}
+                          </td>
                           <td>
                             <input
                               type="number"
@@ -591,7 +678,10 @@ const ReturnItem = () => {
                                       updateItemDiscount(item.item_id, undefined, undefined, numVal);
                                     } else {
                                       const numVal = val === '' ? 0 : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? 0 : parseFloat(val)));
-                                      const itemTotal = parseFloat(item.sale_rate || 0) * parseInt(item.quantity || 0);
+                                      const itemTotal = (partyType === 'buyer'
+                                        ? parseFloat(item.purchase_rate || 0)
+                                        : parseFloat(item.sale_rate || 0)
+                                      ) * parseInt(item.quantity || 0);
                                       if (numVal > itemTotal) return;
                                       updateItemDiscount(item.item_id, numVal);
                                     }
@@ -616,9 +706,11 @@ const ReturnItem = () => {
                           </td>
                           <td>
                             {item.quantity > 0 ? (() => {
-                              const saleRate = parseFloat(item.sale_rate || 0);
+                              const rate = partyType === 'buyer'
+                                ? (parseFloat(item.purchase_rate || 0))
+                                : (parseFloat(item.sale_rate || 0));
                               const quantity = parseInt(item.quantity || 0);
-                              const itemTotal = saleRate * quantity;
+                              const itemTotal = rate * quantity;
                               
                               let itemDiscount = 0;
                               if (item.discount_type === 'percentage' && item.discount_percentage !== null && item.discount_percentage !== undefined) {
@@ -682,20 +774,20 @@ const ReturnItem = () => {
                       <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                         <input
                           type="radio"
-                          value="cash"
-                          checked={returnData.return_type === 'cash'}
-                          onChange={(e) => setReturnData({ ...returnData, return_type: e.target.value })}
-                        />
-                        Return Cash
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input
-                          type="radio"
                           value="adjust"
                           checked={returnData.return_type === 'adjust'}
                           onChange={(e) => setReturnData({ ...returnData, return_type: e.target.value })}
                         />
                         Adjust in Account
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="radio"
+                          value="cash"
+                          checked={returnData.return_type === 'cash'}
+                          onChange={(e) => setReturnData({ ...returnData, return_type: e.target.value })}
+                        />
+                        Return Cash
                       </label>
                     </div>
                     <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '4px' }}>
@@ -874,6 +966,110 @@ const ReturnItem = () => {
           </form>
         </div>
       </div>
+
+      {/* Warning Confirmation Modal */}
+      {showWarningModal && warningData && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: '30px',
+            borderRadius: '8px',
+            maxWidth: '600px',
+            width: '90%',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+          }}>
+            <h3 style={{ color: '#856404', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '24px' }}>⚠️</span>
+              Warning: Return Amount Exceeds Balance
+            </h3>
+            <div style={{ marginBottom: '20px', lineHeight: '1.6' }}>
+              <p style={{ marginBottom: '15px', fontSize: '16px', color: '#333' }}>
+                {warningData.message}
+              </p>
+              <div style={{ 
+                backgroundColor: '#fff3cd', 
+                padding: '15px', 
+                borderRadius: '6px', 
+                border: '1px solid #ffc107',
+                marginBottom: '15px'
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <strong>Return Amount:</strong>
+                    <div style={{ fontSize: '18px', color: '#333' }}>₹{parseFloat(warningData.return_amount || 0).toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <strong>Current Balance:</strong>
+                    <div style={{ fontSize: '18px', color: '#333' }}>₹{parseFloat(warningData.current_balance || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <strong style={{ color: '#dc3545' }}>Cash Payment Required:</strong>
+                    <div style={{ fontSize: '20px', color: '#dc3545', fontWeight: 'bold' }}>
+                      ₹{parseFloat(warningData.cash_payment_required || 0).toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <strong style={{ color: '#28a745' }}>Amount to Adjust:</strong>
+                    <div style={{ fontSize: '20px', color: '#28a745', fontWeight: 'bold' }}>
+                      ₹{parseFloat(warningData.adjustment_amount || 0).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p style={{ color: '#666', fontSize: '14px', fontStyle: 'italic' }}>
+                Please ensure you have the cash ready to pay to the seller before confirming this return.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowWarningModal(false);
+                  setWarningData(null);
+                }}
+                disabled={isProcessing}
+                style={{
+                  padding: '10px 20px',
+                  opacity: isProcessing ? 0.6 : 1,
+                  cursor: isProcessing ? 'not-allowed' : 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleConfirmReturn}
+                disabled={isProcessing}
+                style={{
+                  padding: '10px 20px',
+                  backgroundColor: '#ffc107',
+                  borderColor: '#ffc107',
+                  color: '#856404',
+                  opacity: isProcessing ? 0.6 : 1,
+                  cursor: isProcessing ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isProcessing ? 'Processing...' : 'Confirm & Proceed'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 };

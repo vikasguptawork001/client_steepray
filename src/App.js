@@ -6,6 +6,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AddItem from './pages/AddItem';
 import SellItem from './pages/SellItem';
+import SellItemV2 from './pages/SellItemV2';
+import SellItem2 from './pages/SellItem2';
 import AddBuyerParty from './pages/AddBuyerParty';
 import AddSellerParty from './pages/AddSellerParty';
 import Parties from './pages/Parties';
@@ -57,6 +59,22 @@ function App() {
             element={
               <PrivateRoute>
                 <SellItem />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/sell-item-2"
+            element={
+              <PrivateRoute>
+                <SellItemV2 />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/sell-item-v3"
+            element={
+              <PrivateRoute>
+                <SellItem2 />
               </PrivateRoute>
             }
           />

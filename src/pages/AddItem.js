@@ -17,6 +17,8 @@ const AddItem = () => {
   const [buyerSearchQuery, setBuyerSearchQuery] = useState('');
   const [filteredBuyerParties, setFilteredBuyerParties] = useState([]);
   const [showBuyerSuggestions, setShowBuyerSuggestions] = useState(false);
+  const [loadingBuyerParties, setLoadingBuyerParties] = useState(true);
+  const [buyerPartiesError, setBuyerPartiesError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedItems, setSuggestedItems] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
@@ -36,6 +38,16 @@ const AddItem = () => {
   const [itemImage, setItemImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddingNewItem, setIsAddingNewItem] = useState(false);
+  const [purchasePaymentStatus, setPurchasePaymentStatus] = useState('partially_paid');
+  const [purchasePaidAmount, setPurchasePaidAmount] = useState(0);
+
+  const purchaseTotal = selectedItems.reduce((sum, it) => {
+    const qty = parseInt(it.quantity) || 0;
+    const rate = parseFloat(it.purchase_rate) || 0;
+    return sum + qty * rate;
+  }, 0);
+  const purchasePaidNow = purchasePaymentStatus === 'fully_paid' ? purchaseTotal : Math.max(0, parseFloat(purchasePaidAmount) || 0);
+  const purchaseBalance = Math.max(0, purchaseTotal - purchasePaidNow);
 
   useEffect(() => {
     // Check if user has permission to add items
@@ -79,11 +91,17 @@ const AddItem = () => {
   }, [searchQuery]);
 
   const fetchBuyerParties = async () => {
+    setLoadingBuyerParties(true);
+    setBuyerPartiesError(null);
     try {
       const response = await apiClient.get(config.api.buyers);
-      setBuyerParties(response.data.parties);
+      setBuyerParties(response.data.parties || []);
     } catch (error) {
       console.error('Error fetching buyer parties:', error);
+      setBuyerPartiesError(error.response?.data?.error || 'Server error. Please try again.');
+      toast.error('Error fetching buyer parties: ' + (error.response?.data?.error || 'Server error'));
+    } finally {
+      setLoadingBuyerParties(false);
     }
   };
 
@@ -280,12 +298,16 @@ const AddItem = () => {
     try {
       await apiClient.post(config.api.itemsPurchase, {
         buyer_party_id: selectedBuyer,
-        items: selectedItems
+        items: selectedItems,
+        payment_status: purchasePaymentStatus,
+        paid_amount: purchasePaidNow
       });
       toast.success('Items added successfully!');
       setSelectedItems([]);
       setSelectedBuyer('');
       setBuyerInfo(null);
+      setPurchasePaymentStatus('partially_paid');
+      setPurchasePaidAmount(0);
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Unknown error occurred';
       toast.error('Error saving items: ' + errorMessage);
@@ -360,11 +382,19 @@ const AddItem = () => {
                 </div>
               )}
             </div>
-            {buyerParties.length === 0 && (
+            {loadingBuyerParties ? (
+              <p style={{ color: '#666', fontSize: '14px', marginTop: '5px' }}>
+                Fetching buyer parties...
+              </p>
+            ) : buyerPartiesError ? (
+              <p style={{ color: '#ff6b6b', fontSize: '14px', marginTop: '5px' }}>
+                {buyerPartiesError}
+              </p>
+            ) : buyerParties.length === 0 ? (
               <p style={{ color: '#ff6b6b', fontSize: '14px', marginTop: '5px' }}>
                 No buyer parties found. Please <Link to="/add-buyer-party">add a buyer party</Link> first.
               </p>
-            )}
+            ) : null}
           </div>
 
           {buyerInfo && (
@@ -491,6 +521,35 @@ const AddItem = () => {
               </div>
               <div className="form-row">
                 <div className="form-group">
+                  <label>Purchase Rate *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={newItem.purchase_rate === 0 ? '' : newItem.purchase_rate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const purchaseRate = val === '' ? 0 : parseFloat(val) || 0;
+                      setNewItem({ ...newItem, purchase_rate: purchaseRate });
+                    }}
+                    placeholder="0.00"
+                    required
+                    style={{
+                      borderColor: newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate ? '#dc3545' : undefined
+                    }}
+                  />
+                  {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate && (
+                    <small style={{ color: '#dc3545', display: 'block', marginTop: '5px' }}>
+                      ⚠️ Purchase rate cannot be greater than sale rate
+                    </small>
+                  )}
+                  {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate >= newItem.purchase_rate && (
+                    <small style={{ color: '#28a745', display: 'block', marginTop: '5px' }}>
+                      ✓ Valid: Profit margin: ₹{(newItem.sale_rate - newItem.purchase_rate).toFixed(2)} ({(newItem.purchase_rate > 0 ? (((newItem.sale_rate - newItem.purchase_rate) / newItem.purchase_rate) * 100).toFixed(2) : 0)}%)
+                    </small>
+                  )}
+                </div>
+                <div className="form-group">
                   <label>Tax Rate (%)</label>
                   <select
                     value={newItem.tax_rate}
@@ -531,35 +590,6 @@ const AddItem = () => {
                   {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate && (
                     <small style={{ color: '#dc3545', display: 'block', marginTop: '5px' }}>
                       ⚠️ Sale rate must be ≥ purchase rate
-                    </small>
-                  )}
-                </div>
-                <div className="form-group">
-                  <label>Purchase Rate *</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={newItem.purchase_rate === 0 ? '' : newItem.purchase_rate}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const purchaseRate = val === '' ? 0 : parseFloat(val) || 0;
-                      setNewItem({ ...newItem, purchase_rate: purchaseRate });
-                    }}
-                    placeholder="0.00"
-                    required
-                    style={{
-                      borderColor: newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate ? '#dc3545' : undefined
-                    }}
-                  />
-                  {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate < newItem.purchase_rate && (
-                    <small style={{ color: '#dc3545', display: 'block', marginTop: '5px' }}>
-                      ⚠️ Purchase rate cannot be greater than sale rate
-                    </small>
-                  )}
-                  {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && newItem.sale_rate >= newItem.purchase_rate && (
-                    <small style={{ color: '#28a745', display: 'block', marginTop: '5px' }}>
-                      ✓ Valid: Profit margin: ₹{(newItem.sale_rate - newItem.purchase_rate).toFixed(2)} ({(newItem.purchase_rate > 0 ? (((newItem.sale_rate - newItem.purchase_rate) / newItem.purchase_rate) * 100).toFixed(2) : 0)}%)
                     </small>
                   )}
                 </div>
@@ -672,6 +702,11 @@ const AddItem = () => {
                         <strong>HSN:</strong> {newItem.hsn_number}
                       </div>
                     )}
+                    {newItem.purchase_rate > 0 && (
+                      <div>
+                        <strong>Purchase Rate:</strong> ₹{parseFloat(newItem.purchase_rate).toFixed(2)}
+                      </div>
+                    )}
                     {newItem.tax_rate > 0 && (
                       <div>
                         <strong>Tax Rate:</strong> {newItem.tax_rate}%
@@ -680,11 +715,6 @@ const AddItem = () => {
                     {newItem.sale_rate > 0 && (
                       <div>
                         <strong>Sale Rate:</strong> ₹{parseFloat(newItem.sale_rate).toFixed(2)}
-                      </div>
-                    )}
-                    {newItem.purchase_rate > 0 && (
-                      <div>
-                        <strong>Purchase Rate:</strong> ₹{parseFloat(newItem.purchase_rate).toFixed(2)}
                       </div>
                     )}
                     {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && (
@@ -771,9 +801,9 @@ const AddItem = () => {
                     <th>Product Code</th>
                     <th>Brand</th>
                     <th>HSN</th>
+                    <th>Purchase Rate</th>
                     <th>Tax Rate</th>
                     <th>Sale Rate</th>
-                    <th>Purchase Rate</th>
                     <th>Quantity</th>
                     <th>Alert Qty</th>
                     <th>Rack No</th>
@@ -795,13 +825,13 @@ const AddItem = () => {
                         <span style={{ padding: '5px', display: 'inline-block' }}>{item.hsn_number || '-'}</span>
                       </td>
                       <td>
+                        <span style={{ padding: '5px', display: 'inline-block' }}>₹{parseFloat(item.purchase_rate || 0).toFixed(2)}</span>
+                      </td>
+                      <td>
                         <span style={{ padding: '5px', display: 'inline-block' }}>{item.tax_rate || 0}%</span>
                       </td>
                       <td>
                         <span style={{ padding: '5px', display: 'inline-block' }}>₹{parseFloat(item.sale_rate || 0).toFixed(2)}</span>
-                      </td>
-                      <td>
-                        <span style={{ padding: '5px', display: 'inline-block' }}>₹{parseFloat(item.purchase_rate || 0).toFixed(2)}</span>
                       </td>
                       <td>
                         <input
@@ -848,6 +878,79 @@ const AddItem = () => {
                   ))}
                 </tbody>
               </table>
+              
+              {/* Payment section (Buyer purchase) */}
+              <div style={{
+                marginTop: '16px',
+                padding: '12px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                background: '#fafafa'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: '13px', color: '#555' }}>Total Purchase</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700 }}>₹{purchaseTotal.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '13px', color: '#555' }}>Paid Now</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f766e' }}>₹{purchasePaidNow.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '13px', color: '#555' }}>Balance (Added to Buyer)</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#b45309' }}>₹{purchaseBalance.toFixed(2)}</div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: '12px', display: 'flex', gap: '18px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="radio"
+                      name="purchase_payment_status"
+                      value="fully_paid"
+                      checked={purchasePaymentStatus === 'fully_paid'}
+                      onChange={() => {
+                        setPurchasePaymentStatus('fully_paid');
+                        setPurchasePaidAmount(purchaseTotal);
+                      }}
+                      disabled={isSubmitting || isAddingNewItem}
+                    />
+                    Full Payment
+                  </label>
+                  <label style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="radio"
+                      name="purchase_payment_status"
+                      value="partially_paid"
+                      checked={purchasePaymentStatus === 'partially_paid'}
+                      onChange={() => setPurchasePaymentStatus('partially_paid')}
+                      disabled={isSubmitting || isAddingNewItem}
+                    />
+                    Partial Payment
+                  </label>
+
+                  {purchasePaymentStatus === 'partially_paid' && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', color: '#555' }}>Paid Amount:</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={purchaseTotal}
+                        value={purchasePaidAmount}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const num = val === '' ? 0 : (parseFloat(val) || 0);
+                          setPurchasePaidAmount(Math.min(Math.max(0, num), purchaseTotal));
+                        }}
+                        disabled={isSubmitting || isAddingNewItem}
+                        style={{ width: '140px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px' }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <button 
                 onClick={handleSubmit} 
                 className="btn btn-primary" 

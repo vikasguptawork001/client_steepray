@@ -42,6 +42,11 @@ const Dashboard = () => {
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const [editItemImage, setEditItemImage] = useState(null);
+  const [editItemImagePreview, setEditItemImagePreview] = useState(null);
+  const [originalItemData, setOriginalItemData] = useState(null);
+  const [modalLoading, setModalLoading] = useState(false);
 
   useEffect(() => {
     fetchItems();
@@ -49,13 +54,23 @@ const Dashboard = () => {
 
   // Close dropdown when clicking outside
   useEffect(() => {
+    if (!actionDropdownOpen) return;
+    
     const handleClickOutside = (event) => {
-      if (actionDropdownOpen && !event.target.closest('.action-dropdown-container')) {
+      const target = event.target;
+      const dropdownContainer = target.closest('.action-dropdown-container');
+      const dropdownMenu = target.closest('.action-dropdown-menu');
+      
+      if (!dropdownContainer && !dropdownMenu) {
         setActionDropdownOpen(null);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    
+    // Use click event instead of mousedown for better compatibility
+    document.addEventListener('click', handleClickOutside, true);
+    return () => {
+      document.removeEventListener('click', handleClickOutside, true);
+    };
   }, [actionDropdownOpen]);
 
   const fetchItems = async () => {
@@ -145,7 +160,23 @@ const Dashboard = () => {
   const canDelete = user?.role === 'super_admin';
 
   const handleView = async (item) => {
-    if (updating || deleting || quickSaleLoading) return;
+    if (updating || deleting || quickSaleLoading || modalLoading) return;
+    // Prevent opening if another modal is already open
+    if (showEditModal || showQuickSaleModal || showStockAmountModal || showViewModal) {
+      return;
+    }
+    setModalLoading(true);
+    // Close action dropdown
+    setActionDropdownOpen(null);
+    // Close all other modals first
+    setShowEditModal(false);
+    setShowQuickSaleModal(false);
+    setShowStockAmountModal(false);
+    setEditingItem(null);
+    setOriginalItemData(null);
+    setEditItemImage(null);
+    setEditItemImagePreview(null);
+    setQuickSaleItem(null);
     try {
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
       setViewItem(response.data.item);
@@ -153,15 +184,33 @@ const Dashboard = () => {
       setActionDropdownOpen(null);
     } catch (error) {
       alert('Error fetching item details: ' + (error.response?.data?.error || 'Unknown error'));
+    } finally {
+      setModalLoading(false);
     }
   };
 
   const handleQuickSale = (item) => {
-    if (updating || deleting || quickSaleLoading) return;
+    if (updating || deleting || quickSaleLoading || modalLoading) return;
+    // Prevent opening if another modal is already open
+    if (showEditModal || showViewModal || showStockAmountModal || showQuickSaleModal) {
+      return;
+    }
+    setModalLoading(true);
+    // Close action dropdown
+    setActionDropdownOpen(null);
+    // Close all other modals first
+    setShowEditModal(false);
+    setShowViewModal(false);
+    setShowStockAmountModal(false);
+    setEditingItem(null);
+    setOriginalItemData(null);
+    setEditItemImage(null);
+    setEditItemImagePreview(null);
+    setViewItem(null);
     setQuickSaleItem(item);
     setQuickSaleQuantity(1);
     setShowQuickSaleModal(true);
-    setActionDropdownOpen(null);
+    setModalLoading(false);
   };
 
   const handleQuickSaleSubmit = async () => {
@@ -214,10 +263,26 @@ const Dashboard = () => {
     }
   };
 
-  const handleEdit = (item) => {
-    if (updating || deleting || quickSaleLoading) return;
+  const handleEdit = async (item) => {
+    if (updating || deleting || quickSaleLoading || modalLoading) return;
+    // Prevent opening if another modal is already open
+    if (showViewModal || showQuickSaleModal || showStockAmountModal || showEditModal) {
+      return;
+    }
+    setModalLoading(true);
+    // Close action dropdown
+    setActionDropdownOpen(null);
+    // Close all other modals first
+    setShowViewModal(false);
+    setShowQuickSaleModal(false);
+    setShowStockAmountModal(false);
+    setViewItem(null);
+    setQuickSaleItem(null);
+    
     setEditingItem(item);
-    setEditFormData({
+    
+    // Store original values for comparison
+    const originalData = {
       product_name: item.product_name || '',
       product_code: item.product_code || '',
       brand: item.brand || '',
@@ -228,49 +293,127 @@ const Dashboard = () => {
       quantity: item.quantity || 0,
       alert_quantity: item.alert_quantity || 0,
       rack_number: item.rack_number || '',
-      remarks: item.remarks || '',
       remarks: item.remarks || ''
-    });
+    };
+    setOriginalItemData(originalData);
+    
+    setEditFormData(originalData);
+    // Fetch full item details to get image
+    try {
+      const response = await apiClient.get(`${config.api.items}/${item.id}`);
+      if (response.data.item.image_base64) {
+        setEditItemImagePreview(`data:image/jpeg;base64,${response.data.item.image_base64}`);
+      } else {
+        setEditItemImagePreview(null);
+      }
+    } catch (error) {
+      console.error('Error fetching item image:', error);
+      setEditItemImagePreview(null);
+    } finally {
+      setModalLoading(false);
+    }
+    setEditItemImage(null);
     setShowEditModal(true);
     setActionDropdownOpen(null);
   };
 
   const handleUpdate = async () => {
-    if (!editingItem || updating) return;
+    if (!editingItem || updating || !originalItemData) return;
 
-    // Validation
-    if (!editFormData.product_name || editFormData.product_name.trim() === '') {
-      toast.error('Product name is required');
-      return;
+    // Validation for fields that are being updated
+    if (editFormData.product_name !== undefined) {
+      if (!editFormData.product_name || editFormData.product_name.trim() === '') {
+        toast.error('Product name is required');
+        return;
+      }
     }
 
-    if (!editFormData.sale_rate || editFormData.sale_rate <= 0) {
-      toast.error('Sale rate is required and must be greater than 0');
-      return;
+    if (editFormData.sale_rate !== undefined) {
+      if (!editFormData.sale_rate || editFormData.sale_rate <= 0) {
+        toast.error('Sale rate is required and must be greater than 0');
+        return;
+      }
     }
 
-    if (user?.role === 'super_admin' && (!editFormData.purchase_rate || editFormData.purchase_rate <= 0)) {
-      toast.error('Purchase rate is required and must be greater than 0');
-      return;
+    if (user?.role === 'super_admin' && editFormData.purchase_rate !== undefined) {
+      if (!editFormData.purchase_rate || editFormData.purchase_rate <= 0) {
+        toast.error('Purchase rate is required and must be greater than 0');
+        return;
+      }
     }
 
-    // Validate sale_rate >= purchase_rate
-    if (editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && parseFloat(editFormData.sale_rate) < parseFloat(editFormData.purchase_rate)) {
+    // Validate sale_rate >= purchase_rate (check both current and original values)
+    const finalSaleRate = editFormData.sale_rate !== undefined ? editFormData.sale_rate : originalItemData.sale_rate;
+    const finalPurchaseRate = editFormData.purchase_rate !== undefined ? editFormData.purchase_rate : originalItemData.purchase_rate;
+    if (finalSaleRate > 0 && finalPurchaseRate > 0 && parseFloat(finalSaleRate) < parseFloat(finalPurchaseRate)) {
       toast.error('Sale rate must be greater than or equal to purchase rate');
       return;
     }
 
-    if (editFormData.quantity === undefined || editFormData.quantity < 0) {
+    if (editFormData.quantity !== undefined && editFormData.quantity < 0) {
       toast.error('Quantity must be 0 or greater');
       return;
     }
 
     setUpdating(true);
     try {
-      await apiClient.put(`${config.api.items}/${editingItem.id}`, editFormData);
+      // Compare current form data with original data and only include changed fields
+      const changedFields = {};
+      
+      Object.keys(editFormData).forEach(key => {
+        const currentValue = editFormData[key];
+        const originalValue = originalItemData[key];
+        
+        // Compare values (handle null/undefined and string trimming)
+        const currentVal = currentValue !== null && currentValue !== undefined ? String(currentValue).trim() : '';
+        const originalVal = originalValue !== null && originalValue !== undefined ? String(originalValue).trim() : '';
+        
+        // For numeric fields, compare as numbers
+        if (['sale_rate', 'purchase_rate', 'quantity', 'alert_quantity', 'tax_rate'].includes(key)) {
+          if (parseFloat(currentVal) !== parseFloat(originalVal)) {
+            changedFields[key] = currentValue;
+          }
+        } else {
+          // For string fields, compare as strings
+          if (currentVal !== originalVal) {
+            changedFields[key] = currentValue;
+          }
+        }
+      });
+      
+      // Add image if a new one was selected
+      if (editItemImage) {
+        changedFields.image = editItemImage;
+      }
+
+      // If no fields changed, show message and return
+      if (Object.keys(changedFields).length === 0) {
+        toast.info('No changes detected');
+        setUpdating(false);
+        return;
+      }
+
+      // Create FormData for multipart/form-data (required for image upload)
+      const formData = new FormData();
+      Object.keys(changedFields).forEach(key => {
+        if (key === 'image') {
+          formData.append('image', changedFields[key]);
+        } else if (changedFields[key] !== null && changedFields[key] !== undefined) {
+          formData.append(key, changedFields[key]);
+        }
+      });
+      
+      await apiClient.patch(`${config.api.items}/${editingItem.id}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
       toast.success('Item updated successfully!');
       setShowEditModal(false);
       setEditingItem(null);
+      setOriginalItemData(null);
+      setEditItemImage(null);
+      setEditItemImagePreview(null);
       fetchItems(); // Refresh the list
       if (user?.role === 'super_admin') {
         fetchTotalStockAmount();
@@ -483,27 +626,84 @@ const Dashboard = () => {
                         <td>
                           <div className="action-dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
                             <button
-                              onClick={() => setActionDropdownOpen(actionDropdownOpen === item.id ? null : item.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // Prevent opening dropdown if any action is in progress
+                                if (modalLoading || updating || deleting || quickSaleLoading) {
+                                  return;
+                                }
+                                const isCurrentlyOpen = actionDropdownOpen === item.id;
+                                if (!isCurrentlyOpen) {
+                                  // Calculate position relative to the button
+                                  const buttonRect = e.currentTarget.getBoundingClientRect();
+                                  const dropdownWidth = 180; // minWidth from dropdown style
+                                  const dropdownHeight = 200; // approximate max height
+                                  const spacing = 5; // spacing between button and dropdown
+                                  
+                                  // Try to position dropdown to the left of the button (since Actions column is on the right)
+                                  let left = buttonRect.left - dropdownWidth - spacing;
+                                  let top = buttonRect.top;
+                                  
+                                  // If not enough space on the left, try right side
+                                  if (left < 10) {
+                                    left = buttonRect.right + spacing;
+                                    // If still not enough space on right, align to right edge
+                                    if (left + dropdownWidth > window.innerWidth - 10) {
+                                      left = window.innerWidth - dropdownWidth - 10;
+                                    }
+                                  }
+                                  
+                                  // Ensure dropdown doesn't go off left of screen
+                                  if (left < 10) {
+                                    left = 10;
+                                  }
+                                  
+                                  // Align dropdown vertically with the button
+                                  top = buttonRect.top;
+                                  
+                                  // Check if dropdown would go off bottom of screen
+                                  if (top + dropdownHeight > window.innerHeight - 10) {
+                                    // Position above the button
+                                    top = buttonRect.bottom - dropdownHeight;
+                                    // If still off screen, align to bottom
+                                    if (top < 10) {
+                                      top = window.innerHeight - dropdownHeight - 10;
+                                    }
+                                  }
+                                  
+                                  // Ensure dropdown doesn't go off top of screen
+                                  if (top < 10) {
+                                    top = 10;
+                                  }
+                                  
+                                  setDropdownPosition({ top, left });
+                                  setActionDropdownOpen(item.id);
+                                } else {
+                                  setActionDropdownOpen(null);
+                                }
+                              }}
                               className="action-menu-btn"
+                              disabled={modalLoading || updating || deleting || quickSaleLoading}
                               style={{
                                 background: 'transparent',
                                 border: 'none',
-                                cursor: 'pointer',
+                                cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
                                 padding: '8px',
                                 borderRadius: '50%',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 transition: 'all 0.2s ease',
-                                color: '#666'
+                                color: (modalLoading || updating || deleting || quickSaleLoading) ? '#ccc' : '#666',
+                                opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.5 : 1
                               }}
                               onMouseEnter={(e) => {
-                                e.target.style.backgroundColor = '#f0f0f0';
-                                e.target.style.color = '#333';
+                                e.currentTarget.style.backgroundColor = '#f0f0f0';
+                                e.currentTarget.style.color = '#333';
                               }}
                               onMouseLeave={(e) => {
-                                e.target.style.backgroundColor = 'transparent';
-                                e.target.style.color = '#666';
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                                e.currentTarget.style.color = '#666';
                               }}
                             >
                               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ display: 'block' }}>
@@ -512,23 +712,30 @@ const Dashboard = () => {
                                 <circle cx="12" cy="19" r="2"/>
                               </svg>
                             </button>
-                            {actionDropdownOpen === item.id && (
-                              <div className="action-dropdown-menu" style={{
-                                position: 'absolute',
-                                top: '100%',
-                                right: 0,
-                                zIndex: 1000,
-                                backgroundColor: 'white',
-                                border: '1px solid #e0e0e0',
-                                borderRadius: '8px',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                minWidth: '180px',
-                                marginTop: '8px',
-                                padding: '4px',
-                                animation: 'fadeInDown 0.2s ease'
-                              }}>
+                            {actionDropdownOpen === item.id && !modalLoading && !updating && !deleting && !quickSaleLoading && (
+                              <div 
+                                className="action-dropdown-menu" 
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                  position: 'fixed',
+                                  top: `${dropdownPosition.top}px`,
+                                  left: `${dropdownPosition.left}px`,
+                                  backgroundColor: 'white',
+                                  border: '1px solid #e0e0e0',
+                                  borderRadius: '8px',
+                                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                  minWidth: '180px',
+                                  padding: '4px',
+                                  zIndex: 10000,
+                                  animation: 'fadeInDown 0.2s ease'
+                                }}
+                              >
                                 <button
-                                  onClick={() => handleView(item)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleView(item);
+                                  }}
+                                  disabled={modalLoading || updating || deleting || quickSaleLoading}
                                   className="action-menu-item"
                                   style={{
                                     display: 'flex',
@@ -539,30 +746,43 @@ const Dashboard = () => {
                                     textAlign: 'left',
                                     border: 'none',
                                     backgroundColor: 'transparent',
-                                    cursor: 'pointer',
+                                    cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
                                     borderRadius: '6px',
-                                    color: '#333',
+                                    color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#333',
                                     fontSize: '14px',
-                                    transition: 'all 0.2s ease'
+                                    transition: 'all 0.2s ease',
+                                    opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.target.style.backgroundColor = '#f5f5f5';
-                                    e.target.style.color = '#1976d2';
+                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
+                                      e.target.style.backgroundColor = '#f5f5f5';
+                                      e.target.style.color = '#1976d2';
+                                    }
                                   }}
                                   onMouseLeave={(e) => {
-                                    e.target.style.backgroundColor = 'transparent';
-                                    e.target.style.color = '#333';
+                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
+                                      e.target.style.backgroundColor = 'transparent';
+                                      e.target.style.color = '#333';
+                                    }
                                   }}
                                 >
-                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                                    <circle cx="12" cy="12" r="3"/>
-                                  </svg>
-                                  View
+                                  {modalLoading ? (
+                                    <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
+                                  ) : (
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                      <circle cx="12" cy="12" r="3"/>
+                                    </svg>
+                                  )}
+                                  {modalLoading ? 'Loading...' : 'View'}
                                 </button>
                                 {canEdit && (
                                   <button
-                                    onClick={() => handleEdit(item)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEdit(item);
+                                    }}
+                                    disabled={modalLoading || updating || deleting || quickSaleLoading}
                                     className="action-menu-item"
                                     style={{
                                       display: 'flex',
@@ -573,30 +793,43 @@ const Dashboard = () => {
                                       textAlign: 'left',
                                       border: 'none',
                                       backgroundColor: 'transparent',
-                                      cursor: 'pointer',
+                                      cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
                                       borderRadius: '6px',
-                                      color: '#333',
+                                      color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#333',
                                       fontSize: '14px',
-                                      transition: 'all 0.2s ease'
+                                      transition: 'all 0.2s ease',
+                                      opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1
                                     }}
                                     onMouseEnter={(e) => {
-                                      e.target.style.backgroundColor = '#f5f5f5';
-                                      e.target.style.color = '#1976d2';
+                                      if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
+                                        e.target.style.backgroundColor = '#f5f5f5';
+                                        e.target.style.color = '#1976d2';
+                                      }
                                     }}
                                     onMouseLeave={(e) => {
-                                      e.target.style.backgroundColor = 'transparent';
-                                      e.target.style.color = '#333';
+                                      if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
+                                        e.target.style.backgroundColor = 'transparent';
+                                        e.target.style.color = '#333';
+                                      }
                                     }}
                                   >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                    </svg>
-                                    Edit
+                                    {modalLoading ? (
+                                      <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
+                                    ) : (
+                                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                      </svg>
+                                    )}
+                                    {modalLoading ? 'Loading...' : 'Edit'}
                                   </button>
                                 )}
                                 <button
-                                  onClick={() => handleQuickSale(item)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleQuickSale(item);
+                                  }}
+                                  disabled={modalLoading || updating || deleting || quickSaleLoading}
                                   className="action-menu-item"
                                   style={{
                                     display: 'flex',
@@ -607,34 +840,46 @@ const Dashboard = () => {
                                     textAlign: 'left',
                                     border: 'none',
                                     backgroundColor: 'transparent',
-                                    cursor: 'pointer',
+                                    cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
                                     borderRadius: '6px',
-                                    color: '#333',
+                                    color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#333',
                                     fontSize: '14px',
-                                    transition: 'all 0.2s ease'
+                                    transition: 'all 0.2s ease',
+                                    opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1
                                   }}
                                   onMouseEnter={(e) => {
-                                    e.target.style.backgroundColor = '#f5f5f5';
-                                    e.target.style.color = '#28a745';
+                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
+                                      e.target.style.backgroundColor = '#f5f5f5';
+                                      e.target.style.color = '#28a745';
+                                    }
                                   }}
                                   onMouseLeave={(e) => {
-                                    e.target.style.backgroundColor = 'transparent';
-                                    e.target.style.color = '#333';
+                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
+                                      e.target.style.backgroundColor = 'transparent';
+                                      e.target.style.color = '#333';
+                                    }
                                   }}
                                 >
-                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                    <circle cx="8.5" cy="7" r="4"/>
-                                    <path d="M20 8v6M23 11h-6"/>
-                                  </svg>
-                                  Quick Sale
+                                  {modalLoading ? (
+                                    <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
+                                  ) : (
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                      <circle cx="8.5" cy="7" r="4"/>
+                                      <path d="M20 8v6M23 11h-6"/>
+                                    </svg>
+                                  )}
+                                  {modalLoading ? 'Loading...' : 'Quick Sale'}
                                 </button>
                                 {canDelete && (
                                   <>
                                     <div style={{ height: '1px', backgroundColor: '#e0e0e0', margin: '4px 0' }}></div>
                                     <button
-                                      onClick={() => handleDelete(item.id, item.product_name)}
-                                      disabled={deleting}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDelete(item.id, item.product_name);
+                                      }}
+                                      disabled={modalLoading || updating || deleting || quickSaleLoading}
                                       className="action-menu-item"
                                       style={{
                                         display: 'flex',
@@ -645,33 +890,37 @@ const Dashboard = () => {
                                         textAlign: 'left',
                                         border: 'none',
                                         backgroundColor: 'transparent',
-                                        cursor: deleting ? 'not-allowed' : 'pointer',
+                                        cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
                                         borderRadius: '6px',
-                                        color: deleting ? '#999' : '#dc3545',
+                                        color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#dc3545',
                                         fontSize: '14px',
-                                        opacity: deleting ? 0.6 : 1,
+                                        opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1,
                                         transition: 'all 0.2s ease'
                                       }}
                                       onMouseEnter={(e) => {
-                                        if (!deleting) {
+                                        if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
                                           e.target.style.backgroundColor = '#ffebee';
                                           e.target.style.color = '#c62828';
                                         }
                                       }}
                                       onMouseLeave={(e) => {
-                                        if (!deleting) {
+                                        if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
                                           e.target.style.backgroundColor = 'transparent';
                                           e.target.style.color = '#dc3545';
                                         }
                                       }}
                                     >
-                                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <polyline points="3 6 5 6 21 6"/>
-                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                        <line x1="10" y1="11" x2="10" y2="17"/>
-                                        <line x1="14" y1="11" x2="14" y2="17"/>
-                                      </svg>
-                                      {deleting ? 'Deleting...' : 'Delete'}
+                                      {(modalLoading || updating || deleting || quickSaleLoading) ? (
+                                        <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
+                                      ) : (
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                          <polyline points="3 6 5 6 21 6"/>
+                                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                          <line x1="10" y1="11" x2="10" y2="17"/>
+                                          <line x1="14" y1="11" x2="14" y2="17"/>
+                                        </svg>
+                                      )}
+                                      {deleting ? 'Deleting...' : (modalLoading || updating || quickSaleLoading) ? 'Processing...' : 'Delete'}
                                     </button>
                                   </>
                                 )}
@@ -705,11 +954,23 @@ const Dashboard = () => {
 
         {/* Edit Item Modal */}
         {showEditModal && editingItem && (
-          <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+          <div className="modal-overlay" onClick={(e) => {
+            // Prevent closing on backdrop click
+            if (e.target === e.currentTarget) {
+              e.stopPropagation();
+            }
+          }}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h3>Edit Item: {editingItem.product_name}</h3>
-                <button className="modal-close" onClick={() => setShowEditModal(false)}>×</button>
+                <button className="modal-close" onClick={() => {
+                  setShowEditModal(false);
+                  setEditingItem(null);
+                  setOriginalItemData(null);
+                  setEditItemImage(null);
+                  setEditItemImagePreview(null);
+                  setActionDropdownOpen(null);
+                }}>×</button>
               </div>
               <div className="modal-body">
                 <div className="form-group">
@@ -746,6 +1007,92 @@ const Dashboard = () => {
                   />
                 </div>
                 <div className="form-row">
+                  {user?.role === 'super_admin' && (
+                    <div className="form-group">
+                      <label>Purchase Rate *</label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={editFormData.purchase_rate === 0 ? '' : editFormData.purchase_rate}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEditFormData({ ...editFormData, purchase_rate: val === '' ? 0 : parseFloat(val) || 0 });
+                          }}
+                          required
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            border: editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate < editFormData.purchase_rate 
+                              ? '2px solid #dc3545' 
+                              : editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate
+                              ? '2px solid #28a745'
+                              : '1px solid #ddd',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            transition: 'all 0.2s ease',
+                            backgroundColor: editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate < editFormData.purchase_rate 
+                              ? '#fff5f5' 
+                              : editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate
+                              ? '#f0fff4'
+                              : 'white'
+                          }}
+                        />
+                        {editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate && (
+                          <span style={{
+                            position: 'absolute',
+                            right: '12px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            color: '#28a745',
+                            fontSize: '18px'
+                          }}>✓</span>
+                        )}
+                      </div>
+                      {editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate < editFormData.purchase_rate && (
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '6px', 
+                          marginTop: '6px',
+                          padding: '8px 12px',
+                          backgroundColor: '#fff5f5',
+                          borderRadius: '6px',
+                          border: '1px solid #fecaca'
+                        }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc3545" strokeWidth="2" style={{ flexShrink: 0 }}>
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                          </svg>
+                          <small style={{ color: '#dc3545', fontSize: '13px', fontWeight: '500' }}>
+                            Purchase rate (₹{parseFloat(editFormData.purchase_rate).toFixed(2)}) cannot exceed sale rate (₹{parseFloat(editFormData.sale_rate).toFixed(2)})
+                          </small>
+                        </div>
+                      )}
+                      {editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate && (
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '6px', 
+                          marginTop: '6px',
+                          padding: '8px 12px',
+                          backgroundColor: '#f0fff4',
+                          borderRadius: '6px',
+                          border: '1px solid #c6f6d5'
+                        }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" strokeWidth="2" style={{ flexShrink: 0 }}>
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                          </svg>
+                          <small style={{ color: '#28a745', fontSize: '13px', fontWeight: '500' }}>
+                            Valid: Profit margin ₹{(editFormData.sale_rate - editFormData.purchase_rate).toFixed(2)} ({(editFormData.purchase_rate > 0 ? (((editFormData.sale_rate - editFormData.purchase_rate) / editFormData.purchase_rate) * 100).toFixed(2) : 0)}%)
+                          </small>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="form-group">
                     <label>Tax Rate (%)</label>
                     <select
@@ -850,92 +1197,6 @@ const Dashboard = () => {
                       </div>
                     )}
                   </div>
-                  {user?.role === 'super_admin' && (
-                    <div className="form-group">
-                      <label>Purchase Rate *</label>
-                      <div style={{ position: 'relative' }}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={editFormData.purchase_rate === 0 ? '' : editFormData.purchase_rate}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setEditFormData({ ...editFormData, purchase_rate: val === '' ? 0 : parseFloat(val) || 0 });
-                          }}
-                          required
-                          style={{
-                            width: '100%',
-                            padding: '10px 12px',
-                            border: editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate < editFormData.purchase_rate 
-                              ? '2px solid #dc3545' 
-                              : editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate
-                              ? '2px solid #28a745'
-                              : '1px solid #ddd',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            transition: 'all 0.2s ease',
-                            backgroundColor: editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate < editFormData.purchase_rate 
-                              ? '#fff5f5' 
-                              : editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate
-                              ? '#f0fff4'
-                              : 'white'
-                          }}
-                        />
-                        {editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate && (
-                          <span style={{
-                            position: 'absolute',
-                            right: '12px',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            color: '#28a745',
-                            fontSize: '18px'
-                          }}>✓</span>
-                        )}
-                      </div>
-                      {editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate < editFormData.purchase_rate && (
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '6px', 
-                          marginTop: '6px',
-                          padding: '8px 12px',
-                          backgroundColor: '#fff5f5',
-                          borderRadius: '6px',
-                          border: '1px solid #fecaca'
-                        }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc3545" strokeWidth="2" style={{ flexShrink: 0 }}>
-                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                            <line x1="12" y1="9" x2="12" y2="13"/>
-                            <line x1="12" y1="17" x2="12.01" y2="17"/>
-                          </svg>
-                          <small style={{ color: '#dc3545', fontSize: '13px', fontWeight: '500' }}>
-                            Purchase rate (₹{parseFloat(editFormData.purchase_rate).toFixed(2)}) cannot exceed sale rate (₹{parseFloat(editFormData.sale_rate).toFixed(2)})
-                          </small>
-                        </div>
-                      )}
-                      {editFormData.sale_rate > 0 && editFormData.purchase_rate > 0 && editFormData.sale_rate >= editFormData.purchase_rate && (
-                        <div style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: '6px', 
-                          marginTop: '6px',
-                          padding: '8px 12px',
-                          backgroundColor: '#f0fff4',
-                          borderRadius: '6px',
-                          border: '1px solid #c6f6d5'
-                        }}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#28a745" strokeWidth="2" style={{ flexShrink: 0 }}>
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                            <polyline points="22 4 12 14.01 9 11.01"/>
-                          </svg>
-                          <small style={{ color: '#28a745', fontSize: '13px', fontWeight: '500' }}>
-                            Valid: Profit margin ₹{(editFormData.sale_rate - editFormData.purchase_rate).toFixed(2)} ({(editFormData.purchase_rate > 0 ? (((editFormData.sale_rate - editFormData.purchase_rate) / editFormData.purchase_rate) * 100).toFixed(2) : 0)}%)
-                          </small>
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
                 <div className="form-row">
                   <div className="form-group">
@@ -991,9 +1252,63 @@ const Dashboard = () => {
                     {editFormData.remarks?.length || 0}/200 characters
                   </small>
                 </div>
+                <div className="form-group">
+                  <label>Product Image (Max 3MB)</label>
+                  <input
+                    id="edit-image-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        if (file.size > 3 * 1024 * 1024) {
+                          toast.error('Image size must be less than 3MB');
+                          e.target.value = '';
+                          return;
+                        }
+                        setEditItemImage(file);
+                        setEditItemImagePreview(URL.createObjectURL(file));
+                      }
+                    }}
+                  />
+                  {(editItemImagePreview || editItemImage) && (
+                    <div style={{ marginTop: '10px' }}>
+                      <img 
+                        src={editItemImagePreview} 
+                        alt="Preview" 
+                        style={{ maxWidth: '200px', maxHeight: '200px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditItemImage(null);
+                          setEditItemImagePreview(null);
+                          // Reset file input
+                          const fileInput = document.querySelector('#edit-image-input');
+                          if (fileInput) fileInput.value = '';
+                        }}
+                        style={{ marginLeft: '10px', padding: '5px 10px' }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  {!editItemImagePreview && !editItemImage && (
+                    <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                      Leave empty to keep current image, or select a new image to replace it
+                    </small>
+                  )}
+                </div>
               </div>
               <div className="modal-footer">
-                <button onClick={() => setShowEditModal(false)} className="btn btn-secondary">
+                <button onClick={() => {
+                  setShowEditModal(false);
+                  setEditingItem(null);
+                  setOriginalItemData(null);
+                  setEditItemImage(null);
+                  setEditItemImagePreview(null);
+                  setActionDropdownOpen(null);
+                }} className="btn btn-secondary">
                   Cancel
                 </button>
                 <button 
@@ -1010,11 +1325,21 @@ const Dashboard = () => {
 
         {/* Quick Sale Modal */}
         {showQuickSaleModal && quickSaleItem && (
-          <div className="modal-overlay" onClick={() => setShowQuickSaleModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+          <div className="modal-overlay" onClick={(e) => {
+            // Prevent closing on backdrop click
+            if (e.target === e.currentTarget) {
+              e.stopPropagation();
+            }
+          }}>
+            <div className="modal-content" style={{ maxWidth: '500px' }} onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h3>Quick Sale - {quickSaleItem.product_name}</h3>
-                <button className="modal-close" onClick={() => setShowQuickSaleModal(false)}>×</button>
+                <button className="modal-close" onClick={() => {
+                  setShowQuickSaleModal(false);
+                  setQuickSaleItem(null);
+                  setQuickSaleQuantity(1);
+                  setActionDropdownOpen(null);
+                }}>×</button>
               </div>
               <div className="modal-body">
                 <div className="form-group">
@@ -1074,7 +1399,12 @@ const Dashboard = () => {
                 </div>
               </div>
               <div className="modal-footer">
-                <button onClick={() => setShowQuickSaleModal(false)} className="btn btn-secondary">
+                <button onClick={() => {
+                  setShowQuickSaleModal(false);
+                  setQuickSaleItem(null);
+                  setQuickSaleQuantity(1);
+                  setActionDropdownOpen(null);
+                }} className="btn btn-secondary">
                   Cancel
                 </button>
                 <button 
@@ -1091,105 +1421,297 @@ const Dashboard = () => {
 
         {/* View Item Modal */}
         {showViewModal && viewItem && (
-          <div className="modal-overlay" onClick={() => setShowViewModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-              <div className="modal-header">
-                <h3>Product Details - {viewItem.product_name}</h3>
-                <button className="modal-close" onClick={() => setShowViewModal(false)}>×</button>
-              </div>
-              <div className="modal-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                  <div className="form-group">
-                    <label><strong>Product Name:</strong></label>
-                    <p>{viewItem.product_name}</p>
+          <div className="modal-overlay" onClick={(e) => {
+            // Prevent closing on backdrop click
+            if (e.target === e.currentTarget) {
+              e.stopPropagation();
+            }
+          }}>
+            <div className="modal-content view-item-modal" style={{ maxWidth: '900px' }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header" style={{ 
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                borderBottom: 'none',
+                padding: '25px 30px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{
+                    width: '50px',
+                    height: '50px',
+                    borderRadius: '12px',
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backdropFilter: 'blur(10px)'
+                  }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
                   </div>
-                  <div className="form-group">
-                    <label><strong>Product Code:</strong></label>
-                    <p>{viewItem.product_code || 'N/A'}</p>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>{viewItem.product_name}</h3>
+                    <p style={{ margin: '5px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
+                      {viewItem.product_code || 'No Product Code'}
+                    </p>
                   </div>
-                  <div className="form-group">
-                    <label><strong>Brand:</strong></label>
-                    <p>{viewItem.brand || 'N/A'}</p>
-                  </div>
-                  <div className="form-group">
-                    <label><strong>HSN Number:</strong></label>
-                    <p>{viewItem.hsn_number || 'N/A'}</p>
-                  </div>
-                  <div className="form-group">
-                    <label><strong>Tax Rate:</strong></label>
-                    <p>{viewItem.tax_rate}%</p>
-                  </div>
-                  <div className="form-group">
-                    <label><strong>Sale Rate:</strong></label>
-                    <p>₹{viewItem.sale_rate}</p>
-                  </div>
-                  {user?.role === 'super_admin' && (
-                    <div className="form-group">
-                      <label><strong>Purchase Rate:</strong></label>
-                      <p>₹{viewItem.purchase_rate}</p>
-                    </div>
-                  )}
-                  <div className="form-group">
-                    <label><strong>Quantity:</strong></label>
-                    <p>{viewItem.quantity}</p>
-                  </div>
-                  <div className="form-group">
-                    <label><strong>Alert Quantity:</strong></label>
-                    <p>{viewItem.alert_quantity}</p>
-                  </div>
-                  <div className="form-group">
-                    <label><strong>Rack Number:</strong></label>
-                    <p>{viewItem.rack_number || 'N/A'}</p>
-                  </div>
-                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                    <label><strong>Remarks:</strong></label>
-                    <p>{viewItem.remarks || 'N/A'}</p>
-                  </div>
-                  {viewItem.image_base64 && (
-                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                      <label><strong>Product Image:</strong></label>
-                      <img 
-                        src={`data:image/jpeg;base64,${viewItem.image_base64}`} 
-                        alt={viewItem.product_name}
-                        style={{ maxWidth: '100%', maxHeight: '300px', marginTop: '10px' }}
-                      />
-                    </div>
-                  )}
-                  {(viewItem.created_by_user || viewItem.created_at) && (
-                    <div className="form-group" style={{ gridColumn: '1 / -1', borderTop: '1px solid #eee', paddingTop: '15px', marginTop: '15px' }}>
-                      <h4 style={{ marginBottom: '10px', color: '#333' }}>Audit Information</h4>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                        {viewItem.created_by_user && (
-                          <div>
-                            <label><strong>Created By:</strong></label>
-                            <p>{viewItem.created_by_user}</p>
-                          </div>
-                        )}
-                        {viewItem.created_at_formatted && (
-                          <div>
-                            <label><strong>Created At:</strong></label>
-                            <p>{viewItem.created_at_formatted}</p>
-                          </div>
-                        )}
-                        {viewItem.updated_by_user && (
-                          <div>
-                            <label><strong>Updated By:</strong></label>
-                            <p>{viewItem.updated_by_user}</p>
-                          </div>
-                        )}
-                        {viewItem.updated_at_formatted && (
-                          <div>
-                            <label><strong>Updated At:</strong></label>
-                            <p>{viewItem.updated_at_formatted}</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
                 </div>
+                <button className="modal-close" onClick={() => {
+                  setShowViewModal(false);
+                  setViewItem(null);
+                  setActionDropdownOpen(null);
+                }} style={{ color: 'white' }}>×</button>
               </div>
-              <div className="modal-footer">
-                <button onClick={() => setShowViewModal(false)} className="btn btn-secondary">
+              <div className="modal-body" style={{ padding: '30px', background: '#f8f9fa' }}>
+                {/* Image Section */}
+                {viewItem.image_base64 && (
+                  <div style={{
+                    marginBottom: '30px',
+                    textAlign: 'center',
+                    background: 'white',
+                    borderRadius: '12px',
+                    padding: '20px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                  }}>
+                    <img 
+                      src={`data:image/jpeg;base64,${viewItem.image_base64}`} 
+                      alt={viewItem.product_name}
+                      style={{ 
+                        maxWidth: '100%', 
+                        maxHeight: '400px', 
+                        borderRadius: '8px',
+                        objectFit: 'contain'
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Stock Status Card */}
+                <div style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  marginBottom: '25px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  borderLeft: `4px solid ${viewItem.quantity <= viewItem.alert_quantity ? '#f44336' : '#4caf50'}`
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h4 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#333' }}>Stock Status</h4>
+                    <span style={{
+                      padding: '6px 12px',
+                      borderRadius: '20px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      background: viewItem.quantity <= viewItem.alert_quantity ? '#ffebee' : '#e8f5e9',
+                      color: viewItem.quantity <= viewItem.alert_quantity ? '#c62828' : '#2e7d32'
+                    }}>
+                      {viewItem.quantity <= viewItem.alert_quantity ? '⚠️ Low Stock' : '✓ In Stock'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '15px' }}>
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', fontWeight: '500' }}>Current Quantity</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#333' }}>{viewItem.quantity}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px', fontWeight: '500' }}>Alert Quantity</div>
+                      <div style={{ fontSize: '24px', fontWeight: '700', color: '#666' }}>{viewItem.alert_quantity}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Product Information Card */}
+                <div style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '25px',
+                  marginBottom: '25px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                }}>
+                  <h4 style={{ 
+                    margin: '0 0 20px 0', 
+                    fontSize: '18px', 
+                    fontWeight: '600', 
+                    color: '#333',
+                    paddingBottom: '15px',
+                    borderBottom: '2px solid #f0f0f0'
+                  }}>
+                    Product Information
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Brand</div>
+                      <div style={{ fontSize: '16px', color: '#333', fontWeight: '500' }}>{viewItem.brand || 'N/A'}</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>HSN Number</div>
+                      <div style={{ fontSize: '16px', color: '#333', fontWeight: '500' }}>{viewItem.hsn_number || 'N/A'}</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Rack Number</div>
+                      <div style={{ fontSize: '16px', color: '#333', fontWeight: '500' }}>{viewItem.rack_number || 'N/A'}</div>
+                    </div>
+                    {viewItem.remarks && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', gridColumn: '1 / -1' }}>
+                        <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Remarks</div>
+                        <div style={{ 
+                          fontSize: '14px', 
+                          color: '#555', 
+                          padding: '12px',
+                          background: '#f8f9fa',
+                          borderRadius: '8px',
+                          lineHeight: '1.6'
+                        }}>{viewItem.remarks}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pricing Information Card */}
+                <div style={{
+                  background: 'white',
+                  borderRadius: '12px',
+                  padding: '25px',
+                  marginBottom: '25px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                }}>
+                  <h4 style={{ 
+                    margin: '0 0 20px 0', 
+                    fontSize: '18px', 
+                    fontWeight: '600', 
+                    color: '#333',
+                    paddingBottom: '15px',
+                    borderBottom: '2px solid #f0f0f0'
+                  }}>
+                    Pricing & Tax Information
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: user?.role === 'super_admin' ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', gap: '20px' }}>
+                    {user?.role === 'super_admin' && (
+                      <div style={{
+                        padding: '15px',
+                        background: 'linear-gradient(135deg, #667eea15 0%, #764ba215 100%)',
+                        borderRadius: '10px',
+                        border: '1px solid #e0e0e0'
+                      }}>
+                        <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', marginBottom: '8px' }}>Purchase Rate</div>
+                        <div style={{ fontSize: '22px', fontWeight: '700', color: '#667eea' }}>₹{parseFloat(viewItem.purchase_rate || 0).toFixed(2)}</div>
+                      </div>
+                    )}
+                    <div style={{
+                      padding: '15px',
+                      background: 'linear-gradient(135deg, #f093fb15 0%, #f5576c15 100%)',
+                      borderRadius: '10px',
+                      border: '1px solid #e0e0e0'
+                    }}>
+                      <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', marginBottom: '8px' }}>Tax Rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: '#f5576c' }}>{viewItem.tax_rate}%</div>
+                    </div>
+                    <div style={{
+                      padding: '15px',
+                      background: 'linear-gradient(135deg, #4facfe15 0%, #00f2fe15 100%)',
+                      borderRadius: '10px',
+                      border: '1px solid #e0e0e0'
+                    }}>
+                      <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', marginBottom: '8px' }}>Sale Rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: '#4facfe' }}>₹{parseFloat(viewItem.sale_rate || 0).toFixed(2)}</div>
+                    </div>
+                    {user?.role === 'super_admin' && viewItem.purchase_rate > 0 && (
+                      <div style={{
+                        padding: '15px',
+                        background: 'linear-gradient(135deg, #43e97b15 0%, #38f9d715 100%)',
+                        borderRadius: '10px',
+                        border: '1px solid #e0e0e0',
+                        gridColumn: '1 / -1'
+                      }}>
+                        <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', marginBottom: '8px' }}>Profit Margin</div>
+                        <div style={{ fontSize: '22px', fontWeight: '700', color: '#43e97b' }}>
+                          ₹{(parseFloat(viewItem.sale_rate || 0) - parseFloat(viewItem.purchase_rate || 0)).toFixed(2)} 
+                          <span style={{ fontSize: '14px', marginLeft: '8px', color: '#666' }}>
+                            ({((parseFloat(viewItem.sale_rate || 0) - parseFloat(viewItem.purchase_rate || 0)) / parseFloat(viewItem.purchase_rate || 1) * 100).toFixed(1)}%)
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Audit Information Card */}
+                {(viewItem.created_by_user || viewItem.created_at) && (
+                  <div style={{
+                    background: 'white',
+                    borderRadius: '12px',
+                    padding: '25px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                  }}>
+                    <h4 style={{ 
+                      margin: '0 0 20px 0', 
+                      fontSize: '18px', 
+                      fontWeight: '600', 
+                      color: '#333',
+                      paddingBottom: '15px',
+                      borderBottom: '2px solid #f0f0f0'
+                    }}>
+                      Audit Information
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px' }}>
+                      {viewItem.created_by_user && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Created By</div>
+                          <div style={{ fontSize: '15px', color: '#333', fontWeight: '500' }}>{viewItem.created_by_user}</div>
+                        </div>
+                      )}
+                      {viewItem.created_at_formatted && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Created At</div>
+                          <div style={{ fontSize: '15px', color: '#333', fontWeight: '500' }}>{viewItem.created_at_formatted}</div>
+                        </div>
+                      )}
+                      {viewItem.updated_by_user && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Updated By</div>
+                          <div style={{ fontSize: '15px', color: '#333', fontWeight: '500' }}>{viewItem.updated_by_user}</div>
+                        </div>
+                      )}
+                      {viewItem.updated_at_formatted && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#666', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Updated At</div>
+                          <div style={{ fontSize: '15px', color: '#333', fontWeight: '500' }}>{viewItem.updated_at_formatted}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="modal-footer" style={{ 
+                padding: '20px 30px',
+                background: 'white',
+                borderTop: '1px solid #f0f0f0',
+                borderRadius: '0 0 12px 12px'
+              }}>
+                <button onClick={() => {
+                  setShowViewModal(false);
+                  setViewItem(null);
+                  setActionDropdownOpen(null);
+                }} className="btn btn-primary" style={{
+                  padding: '12px 30px',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  border: 'none',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.5)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+                }}>
                   Close
                 </button>
               </div>
@@ -1199,7 +1721,12 @@ const Dashboard = () => {
 
         {/* Total Stock Amount Modal */}
         {showStockAmountModal && (
-          <div className="modal-overlay" onClick={() => setShowStockAmountModal(false)}>
+          <div className="modal-overlay" onClick={(e) => {
+            // Prevent closing on backdrop click
+            if (e.target === e.currentTarget) {
+              e.stopPropagation();
+            }
+          }}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
               <div className="modal-header">
                 <h3>Total Stock Amount</h3>

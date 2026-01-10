@@ -28,7 +28,9 @@ const AddSellerParty = () => {
   };
 
   const validateMobile = (mobile) => {
-    if (!mobile) return true; // Optional field
+    if (!mobile || mobile.trim().length === 0) {
+      return false; // Required field
+    }
     const re = /^[0-9]{10}$/;
     return re.test(mobile);
   };
@@ -54,7 +56,9 @@ const AddSellerParty = () => {
         }
         break;
       case 'mobile_number':
-        if (value && !validateMobile(value)) {
+        if (!value || value.trim().length === 0) {
+          error = 'Mobile number is required';
+        } else if (!validateMobile(value)) {
           error = 'Mobile number must be exactly 10 digits';
         }
         break;
@@ -241,7 +245,7 @@ const AddSellerParty = () => {
                 )}
               </div>
               <div className="form-group">
-                <label>Mobile Number</label>
+                <label>Mobile Number <span style={{ color: '#dc3545' }}>*</span></label>
                 <div style={{ position: 'relative' }}>
                   <input
                     type="text"
@@ -251,6 +255,7 @@ const AddSellerParty = () => {
                     onBlur={handleBlur}
                     placeholder="10 digits"
                     maxLength={10}
+                    required
                     style={{
                       width: '100%',
                       padding: '10px 12px',
