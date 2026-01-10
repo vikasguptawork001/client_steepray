@@ -6,7 +6,7 @@ const config = {
   // API Base URL
   // In development: uses localhost
   // In production: set via REACT_APP_API_URL environment variable
-  apiBaseUrl: (process.env.REACT_APP_API_URL || 'http://localhost:5000'),
+  apiBaseUrl: (process.env.REACT_APP_API_URL || 'https://server-steepray.onrender.com').replace(/\/+$/, ''),
   
   // API Endpoints
   api: {
