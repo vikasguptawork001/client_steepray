@@ -176,6 +176,138 @@
   }
 }
 
+/* Action Icon Buttons */
+.inline-action-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.action-icon-btn {
+  background: transparent;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  color: #666;
+  min-width: 32px;
+  height: 32px;
+}
+
+.action-icon-btn:hover:not(:disabled) {
+  background-color: #f5f5f5;
+  border-color: #1976d2;
+  color: #1976d2;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.action-icon-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.action-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-icon-btn.danger {
+  color: #dc3545;
+  border-color: #f5c6cb;
+}
+
+.action-icon-btn.danger:hover:not(:disabled) {
+  background-color: #ffebee;
+  border-color: #dc3545;
+  color: #c62828;
+}
+
+.action-icon-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.action-icon-btn:focus {
+  outline: 2px solid #1976d2;
+  outline-offset: 2px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Pagination Styles */
+.pagination {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 15px;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  padding: 15px;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pagination button {
+  padding: 10px 20px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  min-width: 100px;
+  border: 1px solid #ddd !important;
+  border-radius: 6px !important;
+  background: white !important;
+  color: #333 !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pagination button:hover:not(:disabled) {
+  background-color: #f0f0f0 !important;
+  border-color: #007bff !important;
+  color: #007bff !important;
+}
+
+.pagination button:disabled {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  background-color: #f5f5f5 !important;
+}
+
+.pagination span {
+  padding: 10px 15px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+}
+
+@media screen and (max-width: 768px) {
+  .pagination {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .pagination button {
+    width: 100%;
+    max-width: 200px;
+  }
+
+  .pagination span {
+    text-align: center;
+    white-space: normal;
+  }
+}
+
 
 
 

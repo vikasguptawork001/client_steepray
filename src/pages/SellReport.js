@@ -206,7 +206,7 @@ const SellReport = () => {
                 ) : (
                   transactions.map((txn) => (
                     <tr key={txn.id}>
-                      <td>{new Date(txn.transaction_date).toLocaleString()}</td>
+                      <td>{new Date(txn.created_at).toLocaleString()}</td>
                       <td>{txn.bill_number}</td>
                       <td>{txn.party_name}</td>
                       <td>₹{parseFloat(txn.total_amount).toFixed(2)}</td>

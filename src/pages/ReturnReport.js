@@ -185,7 +185,7 @@ const ReturnReport = () => {
                 ) : (
                   transactions.map((txn) => (
                     <tr key={txn.id}>
-                      <td>{new Date(txn.return_date).toLocaleString()}</td>
+                      <td>{new Date(txn.created_at).toLocaleString()}</td>
                       <td>{txn.bill_number || '-'}</td>
                       <td>
                         <span style={{

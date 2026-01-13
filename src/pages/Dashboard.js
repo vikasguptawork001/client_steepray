@@ -36,13 +36,11 @@ const Dashboard = () => {
   const [viewItem, setViewItem] = useState(null);
   const [totalStockAmount, setTotalStockAmount] = useState(null);
   const [showStockAmountModal, setShowStockAmountModal] = useState(false);
-  const [actionDropdownOpen, setActionDropdownOpen] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [quickSaleLoading, setQuickSaleLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [editItemImage, setEditItemImage] = useState(null);
   const [editItemImagePreview, setEditItemImagePreview] = useState(null);
   const [originalItemData, setOriginalItemData] = useState(null);
@@ -52,26 +50,6 @@ const Dashboard = () => {
     fetchItems();
   }, [page, limit, search, searchField]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    if (!actionDropdownOpen) return;
-    
-    const handleClickOutside = (event) => {
-      const target = event.target;
-      const dropdownContainer = target.closest('.action-dropdown-container');
-      const dropdownMenu = target.closest('.action-dropdown-menu');
-      
-      if (!dropdownContainer && !dropdownMenu) {
-        setActionDropdownOpen(null);
-      }
-    };
-    
-    // Use click event instead of mousedown for better compatibility
-    document.addEventListener('click', handleClickOutside, true);
-    return () => {
-      document.removeEventListener('click', handleClickOutside, true);
-    };
-  }, [actionDropdownOpen]);
 
   const fetchItems = async () => {
     try {
@@ -131,14 +109,12 @@ const Dashboard = () => {
     try {
       const data = items.map(item => ({
         'Product Name': item.product_name,
-        'Product Code': item.product_code,
         'Brand': item.brand,
         'HSN Number': item.hsn_number,
         'Tax Rate': item.tax_rate,
         'Sale Rate': item.sale_rate,
         'Purchase Rate': user?.role === 'super_admin' ? item.purchase_rate : 'N/A',
         'Quantity': item.quantity,
-        'Alert Quantity': item.alert_quantity,
         'Rack Number': item.rack_number,
         'Remarks': item.remarks || ''
       }));
@@ -166,8 +142,6 @@ const Dashboard = () => {
       return;
     }
     setModalLoading(true);
-    // Close action dropdown
-    setActionDropdownOpen(null);
     // Close all other modals first
     setShowEditModal(false);
     setShowQuickSaleModal(false);
@@ -181,7 +155,6 @@ const Dashboard = () => {
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
       setViewItem(response.data.item);
       setShowViewModal(true);
-      setActionDropdownOpen(null);
     } catch (error) {
       alert('Error fetching item details: ' + (error.response?.data?.error || 'Unknown error'));
     } finally {
@@ -196,8 +169,6 @@ const Dashboard = () => {
       return;
     }
     setModalLoading(true);
-    // Close action dropdown
-    setActionDropdownOpen(null);
     // Close all other modals first
     setShowEditModal(false);
     setShowViewModal(false);
@@ -270,8 +241,6 @@ const Dashboard = () => {
       return;
     }
     setModalLoading(true);
-    // Close action dropdown
-    setActionDropdownOpen(null);
     // Close all other modals first
     setShowViewModal(false);
     setShowQuickSaleModal(false);
@@ -314,7 +283,6 @@ const Dashboard = () => {
     }
     setEditItemImage(null);
     setShowEditModal(true);
-    setActionDropdownOpen(null);
   };
 
   const handleUpdate = async () => {
@@ -439,7 +407,6 @@ const Dashboard = () => {
     }
 
     setDeleting(true);
-    setActionDropdownOpen(null);
     try {
       await apiClient.delete(`${config.api.items}/${itemId}`);
       toast.success('Item deleted successfully!');
@@ -594,14 +561,12 @@ const Dashboard = () => {
                   <tr>
                     <th>S.No</th>
                     <th>Product Name</th>
-                    <th>Product Code</th>
                     <th>Brand</th>
                     <th>HSN</th>
                     <th>Tax Rate</th>
                     <th>Sale Rate</th>
                     <th>Remarks</th>
                     <th>Quantity</th>
-                    <th>Alert Qty</th>
                     <th>Rack No</th>
                     <th>Actions</th>
                   </tr>
@@ -609,7 +574,7 @@ const Dashboard = () => {
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan="12" style={{ textAlign: 'center' }}>
+                      <td colSpan="10" style={{ textAlign: 'center' }}>
                         No items found
                       </td>
                     </tr>
@@ -618,7 +583,6 @@ const Dashboard = () => {
                       <tr key={item.id}>
                         <td>{(page - 1) * (typeof limit === 'number' ? limit : items.length) + index + 1}</td>
                         <td>{item.product_name}</td>
-                        <td>{item.product_code}</td>
                         <td>{item.brand}</td>
                         <td>{item.hsn_number}</td>
                         <td>{item.tax_rate}%</td>
@@ -627,310 +591,72 @@ const Dashboard = () => {
                           {item.remarks || '-'}
                         </td>
                         <td>{item.quantity}</td>
-                        <td>{item.alert_quantity}</td>
                         <td>{item.rack_number}</td>
                         <td>
-                          <div className="action-dropdown-container" style={{ position: 'relative', display: 'inline-block' }}>
+                          <div className="inline-action-buttons">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                // Prevent opening dropdown if any action is in progress
-                                if (modalLoading || updating || deleting || quickSaleLoading) {
-                                  return;
-                                }
-                                const isCurrentlyOpen = actionDropdownOpen === item.id;
-                                if (!isCurrentlyOpen) {
-                                  // Calculate position relative to the button
-                                  const buttonRect = e.currentTarget.getBoundingClientRect();
-                                  const dropdownWidth = 180; // minWidth from dropdown style
-                                  const dropdownHeight = 200; // approximate max height
-                                  const spacing = 5; // spacing between button and dropdown
-                                  
-                                  // Try to position dropdown to the left of the button (since Actions column is on the right)
-                                  let left = buttonRect.left - dropdownWidth - spacing;
-                                  let top = buttonRect.top;
-                                  
-                                  // If not enough space on the left, try right side
-                                  if (left < 10) {
-                                    left = buttonRect.right + spacing;
-                                    // If still not enough space on right, align to right edge
-                                    if (left + dropdownWidth > window.innerWidth - 10) {
-                                      left = window.innerWidth - dropdownWidth - 10;
-                                    }
-                                  }
-                                  
-                                  // Ensure dropdown doesn't go off left of screen
-                                  if (left < 10) {
-                                    left = 10;
-                                  }
-                                  
-                                  // Align dropdown vertically with the button
-                                  top = buttonRect.top;
-                                  
-                                  // Check if dropdown would go off bottom of screen
-                                  if (top + dropdownHeight > window.innerHeight - 10) {
-                                    // Position above the button
-                                    top = buttonRect.bottom - dropdownHeight;
-                                    // If still off screen, align to bottom
-                                    if (top < 10) {
-                                      top = window.innerHeight - dropdownHeight - 10;
-                                    }
-                                  }
-                                  
-                                  // Ensure dropdown doesn't go off top of screen
-                                  if (top < 10) {
-                                    top = 10;
-                                  }
-                                  
-                                  setDropdownPosition({ top, left });
-                                  setActionDropdownOpen(item.id);
-                                } else {
-                                  setActionDropdownOpen(null);
-                                }
+                                handleView(item);
                               }}
-                              className="action-menu-btn"
                               disabled={modalLoading || updating || deleting || quickSaleLoading}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
-                                padding: '8px',
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                transition: 'all 0.2s ease',
-                                color: (modalLoading || updating || deleting || quickSaleLoading) ? '#ccc' : '#666',
-                                opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.5 : 1
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.backgroundColor = '#f0f0f0';
-                                e.currentTarget.style.color = '#333';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.backgroundColor = 'transparent';
-                                e.currentTarget.style.color = '#666';
-                              }}
+                              className="action-icon-btn"
+                              title="View"
+                              aria-label="View item"
                             >
-                              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style={{ display: 'block' }}>
-                                <circle cx="12" cy="5" r="2"/>
-                                <circle cx="12" cy="12" r="2"/>
-                                <circle cx="12" cy="19" r="2"/>
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
                               </svg>
                             </button>
-                            {actionDropdownOpen === item.id && !modalLoading && !updating && !deleting && !quickSaleLoading && (
-                              <div 
-                                className="action-dropdown-menu" 
-                                onClick={(e) => e.stopPropagation()}
-                                style={{
-                                  position: 'fixed',
-                                  top: `${dropdownPosition.top}px`,
-                                  left: `${dropdownPosition.left}px`,
-                                  backgroundColor: 'white',
-                                  border: '1px solid #e0e0e0',
-                                  borderRadius: '8px',
-                                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                                  minWidth: '180px',
-                                  padding: '4px',
-                                  zIndex: 10000,
-                                  animation: 'fadeInDown 0.2s ease'
+                            {canEdit && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(item);
                                 }}
+                                disabled={modalLoading || updating || deleting || quickSaleLoading}
+                                className="action-icon-btn"
+                                title="Edit"
+                                aria-label="Edit item"
                               >
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleView(item);
-                                  }}
-                                  disabled={modalLoading || updating || deleting || quickSaleLoading}
-                                  className="action-menu-item"
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    width: '100%',
-                                    padding: '10px 14px',
-                                    textAlign: 'left',
-                                    border: 'none',
-                                    backgroundColor: 'transparent',
-                                    cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
-                                    borderRadius: '6px',
-                                    color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#333',
-                                    fontSize: '14px',
-                                    transition: 'all 0.2s ease',
-                                    opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                      e.target.style.backgroundColor = '#f5f5f5';
-                                      e.target.style.color = '#1976d2';
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                      e.target.style.backgroundColor = 'transparent';
-                                      e.target.style.color = '#333';
-                                    }
-                                  }}
-                                >
-                                  {modalLoading ? (
-                                    <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
-                                  ) : (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                                      <circle cx="12" cy="12" r="3"/>
-                                    </svg>
-                                  )}
-                                  {modalLoading ? 'Loading...' : 'View'}
-                                </button>
-                                {canEdit && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleEdit(item);
-                                    }}
-                                    disabled={modalLoading || updating || deleting || quickSaleLoading}
-                                    className="action-menu-item"
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '10px',
-                                      width: '100%',
-                                      padding: '10px 14px',
-                                      textAlign: 'left',
-                                      border: 'none',
-                                      backgroundColor: 'transparent',
-                                      cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
-                                      borderRadius: '6px',
-                                      color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#333',
-                                      fontSize: '14px',
-                                      transition: 'all 0.2s ease',
-                                      opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                        e.target.style.backgroundColor = '#f5f5f5';
-                                        e.target.style.color = '#1976d2';
-                                      }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                        e.target.style.backgroundColor = 'transparent';
-                                        e.target.style.color = '#333';
-                                      }
-                                    }}
-                                  >
-                                    {modalLoading ? (
-                                      <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
-                                    ) : (
-                                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                      </svg>
-                                    )}
-                                    {modalLoading ? 'Loading...' : 'Edit'}
-                                  </button>
-                                )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleQuickSale(item);
-                                  }}
-                                  disabled={modalLoading || updating || deleting || quickSaleLoading}
-                                  className="action-menu-item"
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '10px',
-                                    width: '100%',
-                                    padding: '10px 14px',
-                                    textAlign: 'left',
-                                    border: 'none',
-                                    backgroundColor: 'transparent',
-                                    cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
-                                    borderRadius: '6px',
-                                    color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#333',
-                                    fontSize: '14px',
-                                    transition: 'all 0.2s ease',
-                                    opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1
-                                  }}
-                                  onMouseEnter={(e) => {
-                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                      e.target.style.backgroundColor = '#f5f5f5';
-                                      e.target.style.color = '#28a745';
-                                    }
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                      e.target.style.backgroundColor = 'transparent';
-                                      e.target.style.color = '#333';
-                                    }
-                                  }}
-                                >
-                                  {modalLoading ? (
-                                    <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
-                                  ) : (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                                      <circle cx="8.5" cy="7" r="4"/>
-                                      <path d="M20 8v6M23 11h-6"/>
-                                    </svg>
-                                  )}
-                                  {modalLoading ? 'Loading...' : 'Quick Sale'}
-                                </button>
-                                {canDelete && (
-                                  <>
-                                    <div style={{ height: '1px', backgroundColor: '#e0e0e0', margin: '4px 0' }}></div>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDelete(item.id, item.product_name);
-                                      }}
-                                      disabled={modalLoading || updating || deleting || quickSaleLoading}
-                                      className="action-menu-item"
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '10px',
-                                        width: '100%',
-                                        padding: '10px 14px',
-                                        textAlign: 'left',
-                                        border: 'none',
-                                        backgroundColor: 'transparent',
-                                        cursor: (modalLoading || updating || deleting || quickSaleLoading) ? 'not-allowed' : 'pointer',
-                                        borderRadius: '6px',
-                                        color: (modalLoading || updating || deleting || quickSaleLoading) ? '#999' : '#dc3545',
-                                        fontSize: '14px',
-                                        opacity: (modalLoading || updating || deleting || quickSaleLoading) ? 0.6 : 1,
-                                        transition: 'all 0.2s ease'
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                          e.target.style.backgroundColor = '#ffebee';
-                                          e.target.style.color = '#c62828';
-                                        }
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (!modalLoading && !updating && !deleting && !quickSaleLoading) {
-                                          e.target.style.backgroundColor = 'transparent';
-                                          e.target.style.color = '#dc3545';
-                                        }
-                                      }}
-                                    >
-                                      {(modalLoading || updating || deleting || quickSaleLoading) ? (
-                                        <div style={{ width: '18px', height: '18px', border: '2px solid #999', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
-                                      ) : (
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                          <polyline points="3 6 5 6 21 6"/>
-                                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                          <line x1="10" y1="11" x2="10" y2="17"/>
-                                          <line x1="14" y1="11" x2="14" y2="17"/>
-                                        </svg>
-                                      )}
-                                      {deleting ? 'Deleting...' : (modalLoading || updating || quickSaleLoading) ? 'Processing...' : 'Delete'}
-                                    </button>
-                                  </>
-                                )}
-                              </div>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickSale(item);
+                              }}
+                              disabled={modalLoading || updating || deleting || quickSaleLoading}
+                              className="action-icon-btn"
+                              title="Quick Sale"
+                              aria-label="Quick sale"
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 11l3 3L22 4"/>
+                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                              </svg>
+                            </button>
+                            {canDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(item.id, item.product_name);
+                                }}
+                                disabled={modalLoading || updating || deleting || quickSaleLoading}
+                                className="action-icon-btn danger"
+                                title="Delete"
+                                aria-label="Delete item"
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="3 6 5 6 21 6"/>
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                              </button>
                             )}
                           </div>
                         </td>
@@ -975,7 +701,6 @@ const Dashboard = () => {
                   setOriginalItemData(null);
                   setEditItemImage(null);
                   setEditItemImagePreview(null);
-                  setActionDropdownOpen(null);
                 }}>×</button>
               </div>
               <div className="modal-body">
@@ -1313,7 +1038,6 @@ const Dashboard = () => {
                   setOriginalItemData(null);
                   setEditItemImage(null);
                   setEditItemImagePreview(null);
-                  setActionDropdownOpen(null);
                 }} className="btn btn-secondary">
                   Cancel
                 </button>
@@ -1344,7 +1068,6 @@ const Dashboard = () => {
                   setShowQuickSaleModal(false);
                   setQuickSaleItem(null);
                   setQuickSaleQuantity(1);
-                  setActionDropdownOpen(null);
                 }}>×</button>
               </div>
               <div className="modal-body">
@@ -1409,7 +1132,6 @@ const Dashboard = () => {
                   setShowQuickSaleModal(false);
                   setQuickSaleItem(null);
                   setQuickSaleQuantity(1);
-                  setActionDropdownOpen(null);
                 }} className="btn btn-secondary">
                   Cancel
                 </button>
@@ -1465,7 +1187,6 @@ const Dashboard = () => {
                 <button className="modal-close" onClick={() => {
                   setShowViewModal(false);
                   setViewItem(null);
-                  setActionDropdownOpen(null);
                 }} style={{ color: 'white' }}>×</button>
               </div>
               <div className="modal-body" style={{ padding: '30px', background: '#f8f9fa' }}>
@@ -1697,7 +1418,6 @@ const Dashboard = () => {
                 <button onClick={() => {
                   setShowViewModal(false);
                   setViewItem(null);
-                  setActionDropdownOpen(null);
                 }} className="btn btn-primary" style={{
                   padding: '12px 30px',
                   fontSize: '15px',

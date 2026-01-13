@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { getLocalDateString } from '../utils/dateUtils';
 import TransactionLoader from '../components/TransactionLoader';
@@ -10,6 +11,7 @@ import './Party.css';
 
 const Parties = () => {
   const toast = useToast();
+  const { user } = useAuth();
   const [parties, setParties] = useState([]);
   const [filter, setFilter] = useState('all'); // 'all', 'buyer', 'seller'
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,6 +38,20 @@ const Parties = () => {
   const [transactionDetails, setTransactionDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+  // Edit and Archive states
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingParty, setEditingParty] = useState(null);
+  const [editFormData, setEditFormData] = useState({
+    party_name: '',
+    mobile_number: '',
+    email: '',
+    address: '',
+    opening_balance: '',
+    closing_balance: '',
+    gst_number: ''
+  });
+  const [updating, setUpdating] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   // Manage body scroll when transaction is processing
   useEffect(() => {
@@ -145,6 +161,80 @@ const Parties = () => {
     setPaymentMethod('Cash');
     setPaymentNotes('');
     setShowPaymentModal(true);
+  };
+
+  const handleEdit = (party) => {
+    setEditingParty(party);
+    setEditFormData({
+      party_name: party.party_name || '',
+      mobile_number: party.mobile_number || '',
+      email: party.email || '',
+      address: party.address || '',
+      opening_balance: party.opening_balance || '',
+      closing_balance: party.closing_balance || '',
+      gst_number: party.gst_number || ''
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingParty || updating) return;
+
+    // Validate required fields
+    if (!editFormData.party_name || editFormData.party_name.trim() === '') {
+      toast.error('Party name is required');
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      const endpoint = editingParty.party_type === 'buyer'
+        ? `${config.api.buyers}/${editingParty.id}`
+        : `${config.api.sellers}/${editingParty.id}`;
+
+      // Prepare update data - only include fields that have values
+      const updateData = {};
+      if (editFormData.party_name) updateData.party_name = editFormData.party_name.trim();
+      if (editFormData.mobile_number) updateData.mobile_number = editFormData.mobile_number.trim();
+      if (editFormData.email) updateData.email = editFormData.email.trim().toLowerCase();
+      if (editFormData.address) updateData.address = editFormData.address.trim();
+      if (editFormData.opening_balance !== '') updateData.opening_balance = parseFloat(editFormData.opening_balance) || 0;
+      if (editFormData.closing_balance !== '') updateData.closing_balance = parseFloat(editFormData.closing_balance) || 0;
+      if (editFormData.gst_number) updateData.gst_number = editFormData.gst_number.trim();
+
+      await apiClient.patch(endpoint, updateData);
+      toast.success('Party updated successfully!');
+      setShowEditModal(false);
+      setEditingParty(null);
+      fetchParties(); // Refresh the list
+    } catch (error) {
+      console.error('Error updating party:', error);
+      toast.error(error.response?.data?.error || 'Failed to update party');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleArchive = async (party) => {
+    if (!window.confirm(`Are you sure you want to archive "${party.party_name}"? This action can be undone by restoring the party.`)) {
+      return;
+    }
+
+    setArchiving(true);
+    try {
+      const endpoint = party.party_type === 'buyer'
+        ? `${config.api.buyers}/${party.id}`
+        : `${config.api.sellers}/${party.id}`;
+
+      await apiClient.delete(endpoint);
+      toast.success('Party archived successfully!');
+      fetchParties(); // Refresh the list
+    } catch (error) {
+      console.error('Error archiving party:', error);
+      toast.error(error.response?.data?.error || 'Failed to archive party');
+    } finally {
+      setArchiving(false);
+    }
   };
 
   const handleViewTransaction = async (transaction) => {
@@ -505,21 +595,60 @@ const Parties = () => {
                           ₹{parseFloat(party.balance_amount || 0).toFixed(2)}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <div className="inline-action-buttons" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
                             <button
                               onClick={() => handleViewDetails(party)}
-                              className="btn btn-primary"
-                              style={{ padding: '6px 12px', fontSize: '12px' }}
+                              className="action-icon-btn"
+                              title="View Details"
+                              aria-label="View party details"
                             >
-                              View Details
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                              </svg>
                             </button>
                             <button
                               onClick={() => handleMakePayment(party)}
-                              className="btn btn-success"
-                              style={{ padding: '6px 12px', fontSize: '12px' }}
+                              className="action-icon-btn"
+                              title="Make Payment"
+                              aria-label="Make payment"
                             >
-                              Make Payment
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <line x1="12" y1="1" x2="12" y2="23"/>
+                                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                              </svg>
                             </button>
+                            {(user?.role === 'admin' || user?.role === 'super_admin') && (
+                              <>
+                                <button
+                                  onClick={() => handleEdit(party)}
+                                  className="action-icon-btn"
+                                  title="Edit Party"
+                                  aria-label="Edit party"
+                                >
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleArchive(party)}
+                                  className="action-icon-btn danger"
+                                  title="Archive Party"
+                                  aria-label="Archive party"
+                                  disabled={archiving}
+                                >
+                                  {archiving ? (
+                                    <div style={{ width: '18px', height: '18px', border: '2px solid currentColor', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
+                                  ) : (
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M3 6h18"/>
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                    </svg>
+                                  )}
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -657,21 +786,21 @@ const Parties = () => {
                         <thead style={{ position: 'sticky', top: 0, backgroundColor: '#34495e', color: '#ffffff', zIndex: 10 }}>
                           <tr>
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Date</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Type</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Payment Type</th>
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Bill/Ref No</th>
                             {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Description</th> */}
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Previous Amount</th>
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Current Transaction</th>
                             <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Paid Amount</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>After Amount</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Status</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Balance Amount</th>
+                            {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Status</th> */}
                             {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Action</th> */}
                           </tr>
                         </thead>
                         <tbody>
                           {transactionHistory.map((txn, idx) => (
                             <tr key={idx}>
-                             {new Date(txn.transaction_timestamp).toISOString()}
+                             <td>{new Date(txn.transaction_timestamp || txn.created_at).toLocaleString()}</td>
                               <td>
                                 <span style={{
                                   padding: '4px 8px',
@@ -763,7 +892,7 @@ const Parties = () => {
                                 </div>
                               </td>
                               
-                              <td>
+                              {/* <td>
                                 {txn.payment_status && (
                                   <span style={{
                                     padding: '4px 8px',
@@ -775,7 +904,7 @@ const Parties = () => {
                                     {txn.payment_status.replace('_', ' ').toUpperCase()}
                                   </span>
                                 )}
-                              </td>
+                              </td> */}
                               {/* <td style={{ textAlign: 'center' }}>
                                 <button
                                   onClick={() => handleViewTransaction(txn)}
@@ -791,7 +920,19 @@ const Parties = () => {
                       </table>
                     </div>
                     {historyPagination && historyPagination.totalPages > 1 && (
-                      <div className="pagination" style={{ marginTop: '15px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
+                      <div className="pagination" style={{ 
+                        marginTop: '20px', 
+                        marginBottom: '10px',
+                        padding: '15px',
+                        display: 'flex', 
+                        justifyContent: 'center', 
+                        alignItems: 'center', 
+                        gap: '15px',
+                        flexWrap: 'wrap',
+                        backgroundColor: '#f8f9fa',
+                        borderRadius: '6px',
+                        border: '1px solid #e0e0e0'
+                      }}>
                         <button
                           onClick={() => {
                             const newPage = historyPage - 1;
@@ -800,10 +941,26 @@ const Parties = () => {
                           }}
                           disabled={historyPage === 1}
                           className="btn btn-secondary"
+                          style={{
+                            padding: '10px 20px',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            minWidth: '100px',
+                            border: '1px solid #ddd',
+                            borderRadius: '6px',
+                            cursor: historyPage === 1 ? 'not-allowed' : 'pointer',
+                            opacity: historyPage === 1 ? 0.6 : 1
+                          }}
                         >
                           Previous
                         </button>
-                        <span>
+                        <span style={{
+                          padding: '10px 15px',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          color: '#333',
+                          whiteSpace: 'nowrap'
+                        }}>
                           Page {historyPage} of {historyPagination.totalPages} ({historyPagination.totalRecords} total)
                         </span>
                         <button
@@ -814,6 +971,16 @@ const Parties = () => {
                           }}
                           disabled={historyPage >= historyPagination.totalPages}
                           className="btn btn-secondary"
+                          style={{
+                            padding: '10px 20px',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            minWidth: '100px',
+                            border: '1px solid #ddd',
+                            borderRadius: '6px',
+                            cursor: historyPage >= historyPagination.totalPages ? 'not-allowed' : 'pointer',
+                            opacity: historyPage >= historyPagination.totalPages ? 0.6 : 1
+                          }}
                         >
                           Next
                         </button>
@@ -1231,6 +1398,138 @@ const Parties = () => {
                 className="btn btn-secondary"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Party Modal */}
+      {showEditModal && editingParty && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <h3>Edit {editingParty.party_type === 'buyer' ? 'Buyer' : 'Seller'} Party</h3>
+              <button className="modal-close" onClick={() => {
+                setShowEditModal(false);
+                setEditingParty(null);
+                setEditFormData({
+                  party_name: '',
+                  mobile_number: '',
+                  email: '',
+                  address: '',
+                  opening_balance: '',
+                  closing_balance: '',
+                  gst_number: ''
+                });
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Party Name *</label>
+                <input
+                  type="text"
+                  value={editFormData.party_name}
+                  onChange={(e) => setEditFormData({ ...editFormData, party_name: e.target.value })}
+                  required
+                  placeholder="Enter party name"
+                />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Mobile Number</label>
+                  <input
+                    type="text"
+                    value={editFormData.mobile_number}
+                    onChange={(e) => setEditFormData({ ...editFormData, mobile_number: e.target.value })}
+                    placeholder="Enter mobile number"
+                    maxLength={20}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={editFormData.email}
+                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    placeholder="Enter email address"
+                    maxLength={100}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Address</label>
+                <textarea
+                  value={editFormData.address}
+                  onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                  placeholder="Enter address"
+                  rows="3"
+                />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Opening Balance</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editFormData.opening_balance}
+                    onChange={(e) => setEditFormData({ ...editFormData, opening_balance: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Closing Balance</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editFormData.closing_balance}
+                    onChange={(e) => setEditFormData({ ...editFormData, closing_balance: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>GST Number</label>
+                <input
+                  type="text"
+                  value={editFormData.gst_number}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^A-Za-z0-9]/g, '');
+                    if (value.length <= 20) {
+                      setEditFormData({ ...editFormData, gst_number: value });
+                    }
+                  }}
+                  placeholder="Enter GST number (alphanumeric, max 20 chars)"
+                  maxLength={20}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingParty(null);
+                  setEditFormData({
+                    party_name: '',
+                    mobile_number: '',
+                    email: '',
+                    address: '',
+                    opening_balance: '',
+                    closing_balance: '',
+                    gst_number: ''
+                  });
+                }}
+                className="btn btn-secondary"
+                disabled={updating}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdate}
+                className="btn btn-primary"
+                disabled={updating}
+              >
+                {updating ? 'Updating...' : 'Update Party'}
               </button>
             </div>
           </div>

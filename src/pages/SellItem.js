@@ -865,7 +865,7 @@ const SellItem = () => {
                   outline: 'none',
                   maxHeight: 'calc(100vh - 200px)',
                   overflowY: 'auto',
-                  overflowX: 'auto',
+                  overflowX: 'hidden',
                   position: 'relative',
                   scrollBehavior: 'smooth'
                 }}
@@ -917,11 +917,7 @@ const SellItem = () => {
                   <th style={{ padding: '8px', textAlign: 'center', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>Disc%</th>
                   <th style={{ padding: '8px', textAlign: 'right', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>Price</th>
                   {previewData.withGst && (
-                    <>
-                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>CGST Rate</th>
-                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>SGST Rate</th>
-                      <th style={{ padding: '8px', textAlign: 'center', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>IGST Rate</th>
-                    </>
+                    <th style={{ padding: '8px', textAlign: 'center', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>Tax Rate</th>
                   )}
                   <th style={{ padding: '8px', textAlign: 'right', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>Amount(₹)</th>
                   {!previewData.transactionId && <th style={{ padding: '8px', textAlign: 'center', fontWeight: '600', border: '1px solid #2c3e50', backgroundColor: '#34495e', color: '#ffffff' }}>Action</th>}
@@ -1038,11 +1034,7 @@ const SellItem = () => {
                           </td>
                       <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd' }}>₹{parseFloat(item.effectiveRate || item.sale_rate || 0).toFixed(2)}</td>
                       {previewData.withGst && (
-                        <>
-                          <td style={{ textAlign: 'center', padding: '8px', border: '1px solid #ddd' }}>{parseFloat((item.tax_rate || 0) / 2).toFixed(2)}%</td>
-                          <td style={{ textAlign: 'center', padding: '8px', border: '1px solid #ddd' }}>{parseFloat((item.tax_rate || 0) / 2).toFixed(2)}%</td>
-                          <td style={{ textAlign: 'center', padding: '8px', border: '1px solid #ddd' }}>-</td>
-                        </>
+                        <td style={{ textAlign: 'center', padding: '8px', border: '1px solid #ddd' }}>{parseFloat(item.tax_rate || 0).toFixed(2)}%</td>
                       )}
                       <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontWeight: '600' }}>₹{parseFloat(item.itemTotalAfterDiscount || itemTotal || 0).toFixed(2)}</td>
                       {!previewData.transactionId && (
@@ -1077,7 +1069,7 @@ const SellItem = () => {
                       {/* Less: Rounded Off */}
                       {Math.abs(roundedOff) > 0.01 && (
                   <tr>
-                          <td colSpan={previewData.withGst ? 10 : 6} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>
+                          <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>
                             Less: Rounded Off ({roundedOff > 0 ? '-' : '+'}):
                     </td>
                           <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontWeight: '600', fontSize: '12px' }}>
@@ -1092,7 +1084,7 @@ const SellItem = () => {
                         <td colSpan={previewData.withGst ? 3 : 2} style={{ textAlign: 'left', padding: '10px', border: '1px solid #ddd', fontWeight: '700', fontSize: '13px' }}>
                           Grand Total (Quantity): {totalQty.toFixed(2)} PCS
                   </td>
-                        <td colSpan={previewData.withGst ? 7 : 5} style={{ textAlign: 'right', padding: '10px', border: '1px solid #ddd', fontWeight: '700', fontSize: '16px' }}>
+                        <td colSpan={previewData.withGst ? 5 : 5} style={{ textAlign: 'right', padding: '10px', border: '1px solid #ddd', fontWeight: '700', fontSize: '16px' }}>
                           Grand Total (Amount): ₹{finalGrandTotal.toFixed(2)}
                   </td>
                         {!previewData.transactionId && <td></td>}
@@ -1101,7 +1093,7 @@ const SellItem = () => {
                       {/* Tax Summary (only for GST) */}
                       {previewData.withGst && totalTax > 0 && (
                         <tr style={{ backgroundColor: '#f8f9fa', borderTop: '1px solid #ddd' }}>
-                          <td colSpan={previewData.withGst ? 10 : 7} style={{ padding: '10px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
+                          <td colSpan={previewData.withGst ? 8 : 7} style={{ padding: '10px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
                             Tax Summary:
                     </td>
                           {!previewData.transactionId && <td></td>}
@@ -1123,7 +1115,7 @@ const SellItem = () => {
                       {/* Previous Balance Row */}
                       {(previewData.previousBalance || 0) > 0 && (
                         <tr>
-                          <td colSpan={previewData.withGst ? 10 : 6} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600', color: '#e65100' }}>
+                          <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600', color: '#e65100' }}>
                             Previous Balance:
                   </td>
                           <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600', color: '#e65100' }}>
@@ -1135,7 +1127,7 @@ const SellItem = () => {
 
                       {/* Amount Paid and Balance Due */}
                 <tr style={{ backgroundColor: '#d4edda' }}>
-                        <td colSpan={previewData.withGst ? 10 : 6} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
+                        <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
                     Amount Paid:
                   </td>
                         <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
@@ -1144,7 +1136,7 @@ const SellItem = () => {
                         {!previewData.transactionId && <td></td>}
                 </tr>
                       <tr style={{ backgroundColor: ((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))) > 0 ? '#f8d7da' : '#d4edda' }}>
-                        <td colSpan={previewData.withGst ? 10 : 6} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '700' }}>
+                        <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '700' }}>
                     Balance Due:
                   </td>
                         <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '700' }}>
