@@ -102,7 +102,7 @@
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-bottom: 100px; /* Add padding to prevent content from being hidden behind fixed footer */
+  padding-bottom: 350px; /* Increased padding to prevent content from being hidden behind fixed footer */
 }
 
 .footer {

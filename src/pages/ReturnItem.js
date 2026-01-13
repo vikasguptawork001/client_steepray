@@ -642,9 +642,18 @@ const ReturnItem = () => {
                           setShowPreview(false);
                           setPreviewData(null);
                         }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px'
+                        }}
                       >
-                        {party.party_name}
-                        {party.mobile_number && ` - ${party.mobile_number}`}
+                        <span style={{ fontWeight: '600' }}>{party.party_name}</span>
+                        {party.mobile_number && (
+                          <span style={{ fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>
+                            📱 {party.mobile_number}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1356,7 +1365,20 @@ const ReturnItem = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                <div style={{ 
+                  display: 'flex', 
+                  gap: '10px', 
+                  marginTop: '20px',
+                  marginBottom: '20px',
+                  paddingBottom: '20px',
+                  position: 'sticky',
+                  bottom: 0,
+                  backgroundColor: '#f8f9fa',
+                  padding: '20px',
+                  borderRadius: '8px',
+                  border: '1px solid #dee2e6',
+                  zIndex: 10
+                }}>
                   <button 
                     type="button" 
                     className="btn btn-secondary"
@@ -1367,7 +1389,9 @@ const ReturnItem = () => {
                     tabIndex={isProcessing ? -1 : 0}
                     style={{
                       opacity: isProcessing ? 0.6 : 1,
-                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                      cursor: isProcessing ? 'not-allowed' : 'pointer',
+                      flex: '1 1 auto',
+                      minWidth: '150px'
                     }}
                   >
                     Back to Edit
@@ -1381,7 +1405,9 @@ const ReturnItem = () => {
                     tabIndex={isProcessing ? -1 : 0}
                     style={{
                       opacity: isProcessing ? 0.6 : 1,
-                      cursor: isProcessing ? 'not-allowed' : 'pointer'
+                      cursor: isProcessing ? 'not-allowed' : 'pointer',
+                      flex: '1 1 auto',
+                      minWidth: '150px'
                     }}
                   >
                     {isProcessing ? 'Processing...' : 'Confirm Return'}

@@ -499,9 +499,13 @@ const SellItemV2 = () => {
                             aria-selected={String(p.id) === String(selectedSellerId)}
                           >
                             <div />
-                            <div>
-                              <p className="sell2-suggest-title">{p.party_name}</p>
-                              <p className="sell2-suggest-sub">{p.mobile_number ? `Mob: ${p.mobile_number}` : ' '}</p>
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <p className="sell2-suggest-title" style={{ margin: 0 }}>{p.party_name}</p>
+                              {p.mobile_number && (
+                                <p className="sell2-suggest-sub" style={{ margin: 0, fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>
+                                  📱 {p.mobile_number}
+                                </p>
+                              )}
                             </div>
                             <span className="sell2-pill">{formatMoney(p.balance_amount || 0)}</span>
                           </div>

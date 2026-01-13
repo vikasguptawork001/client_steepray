@@ -142,7 +142,6 @@
   cursor: pointer;
   transition: background 0.2s;
   display: flex;
-  justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #f5f8fa;
 }

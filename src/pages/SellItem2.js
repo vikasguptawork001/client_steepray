@@ -306,10 +306,17 @@ const SellItem2 = () => {
                     className="suggestion-item"
                     onClick={() => handleSelectSeller(seller)}
                   >
-                    <div>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '10px'
+                    }}>
                       <strong>{seller.party_name}</strong>
-                      <br />
-                      <small>{seller.mobile_number}</small>
+                      {seller.mobile_number && (
+                        <small style={{ fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>
+                          📱 {seller.mobile_number}
+                        </small>
+                      )}
                     </div>
                   </div>
                 ))}

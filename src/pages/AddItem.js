@@ -473,8 +473,18 @@ const AddItem = () => {
                       key={party.id}
                       className="suggestion-item"
                       onClick={() => selectBuyerParty(party)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                      }}
                     >
-                      {party.party_name} {party.mobile_number && `- ${party.mobile_number}`}
+                      <span style={{ fontWeight: '600' }}>{party.party_name}</span>
+                      {party.mobile_number && (
+                        <span style={{ fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>
+                          📱 {party.mobile_number}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>

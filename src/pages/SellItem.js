@@ -596,23 +596,8 @@ const SellItem = () => {
     };
   }, [loading.submit, actionInProgress]);
 
-  // Handle scroll-to-top button visibility
-  useEffect(() => {
-    const handleScroll = () => {
-      if (billPreviewRef.current) {
-        const scrollTop = billPreviewRef.current.scrollTop;
-        setShowScrollToTop(scrollTop > 300);
-      }
-    };
-
-    const billPreview = billPreviewRef.current;
-    if (billPreview) {
-      billPreview.addEventListener('scroll', handleScroll);
-      return () => {
-        billPreview.removeEventListener('scroll', handleScroll);
-      };
-    }
-  }, [previewData]);
+  // Scroll-to-top functionality disabled - bill preview is no longer scrollable
+  // The preview will show completely without internal scrolling
 
   const handleScrollToTop = () => {
     if (billPreviewRef.current) {
@@ -856,18 +841,17 @@ const SellItem = () => {
           )}
           {previewData && !previewLoading && (
             <div style={{ position: 'relative' }}>
-              <div 
+              <div
                 ref={billPreviewRef}
-                className="bill-preview" 
+                className="bill-preview"
                 id="bill-print-content"
                 tabIndex={0}
-                style={{ 
+                style={{
                   outline: 'none',
-                  maxHeight: 'calc(100vh - 200px)',
-                  overflowY: 'auto',
-                  overflowX: 'hidden',
+                  overflow: 'visible',
                   position: 'relative',
-                  scrollBehavior: 'smooth'
+                  paddingBottom: '120px',
+                  marginBottom: '80px'
                 }}
               >
             {/* Seller Info Only */}
@@ -1150,23 +1134,34 @@ const SellItem = () => {
               </tfoot>
             </table>
             
-            {/* Amount in Words */}
-            <div style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '5px', border: '1px solid #ddd' }}>
-              <p style={{ margin: '0', fontSize: '13px', fontWeight: '600' }}>
-                <strong>Amount in Words:</strong> {numberToWords(previewData.grandTotal || previewData.total || 0)}
-              </p>
-            </div>
+            {/* White Container for Amount in Words and Payment Configuration */}
+            <div style={{ 
+              marginTop: '20px', 
+              padding: '20px',
+              paddingBottom: '50px',
+              marginBottom: '50px',
+              backgroundColor: '#ffffff', 
+              borderRadius: '12px', 
+              border: '1px solid #e1e8ed',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)'
+            }}>
+              {/* Amount in Words */}
+              <div style={{ marginBottom: '20px', paddingBottom: '15px', borderBottom: '2px solid #e9ecef' }}>
+                <p style={{ margin: '0', fontSize: '14px', fontWeight: '600', color: '#212529' }}>
+                  <strong>Amount in Words:</strong> {numberToWords(previewData.grandTotal || previewData.total || 0)}
+                </p>
+              </div>
 
             {!previewData.transactionId && (
-              <div className="payment-section" style={{ marginTop: '30px' }}>
+              <div className="payment-section" style={{ marginTop: '0', width: '100%' }}>
                 <div style={{
-                  marginBottom: '20px',
-                  paddingBottom: '12px',
+                  marginBottom: '15px',
+                  paddingBottom: '10px',
                   borderBottom: '2px solid #e9ecef'
                 }}>
                   <h3 style={{
                     margin: 0,
-                    fontSize: '20px',
+                    fontSize: '18px',
                     fontWeight: '600',
                     color: '#212529',
                     letterSpacing: '-0.3px'
@@ -1179,24 +1174,25 @@ const SellItem = () => {
                 <div className="payment-controls-grid" style={{
                   display: 'grid',
                   gridTemplateColumns: 'auto auto 1fr auto',
-                  gap: '20px',
+                  gap: '15px',
                   alignItems: 'center',
-                  padding: '24px',
+                  padding: '15px',
                   backgroundColor: '#ffffff',
-                  borderRadius: '12px',
+                  borderRadius: '8px',
                   border: '1px solid #e0e0e0',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                  width: '100%'
                 }}>
                   {/* GST Selection */}
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    padding: '14px 20px',
+                    padding: '10px 15px',
                     backgroundColor: '#f8f9fa',
                     borderRadius: '8px',
                     border: '1px solid #e9ecef',
-                    minWidth: '180px',
-                    height: '48px'
+                    minWidth: '160px',
+                    height: '42px'
                   }}>
                     <label style={{
                       display: 'flex',
@@ -1243,13 +1239,13 @@ const SellItem = () => {
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '12px',
-                      padding: '14px 20px',
+                      gap: '10px',
+                      padding: '10px 15px',
                       backgroundColor: '#fff8e1',
                       borderRadius: '8px',
                       border: '1px solid #ffc107',
-                      minWidth: '200px',
-                      height: '48px'
+                      minWidth: '180px',
+                      height: '42px'
                     }}>
                       <span style={{ fontSize: '18px', lineHeight: 1 }}>⚠️</span>
                       <div style={{ display: 'flex', flexDirection: 'column', lineHeight: '1.3' }}>
@@ -1266,21 +1262,21 @@ const SellItem = () => {
                   {/* Payment Status Radio Buttons */}
                   <div style={{
                     display: 'flex',
-                    gap: '12px',
+                    gap: '10px',
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}>
                     <label style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '10px',
-                      padding: '12px 24px',
+                      gap: '8px',
+                      padding: '10px 18px',
                       border: paymentStatus === 'fully_paid' ? '2px solid #28a745' : '1px solid #dee2e6',
                       borderRadius: '8px',
                       backgroundColor: paymentStatus === 'fully_paid' ? '#d4edda' : '#ffffff',
                       cursor: 'pointer',
                       transition: 'all 0.2s ease',
-                      minWidth: '150px',
+                      minWidth: '130px',
                       justifyContent: 'center',
                       boxShadow: paymentStatus === 'fully_paid' ? '0 2px 4px rgba(40, 167, 69, 0.2)' : 'none'
                     }}>
@@ -1315,14 +1311,14 @@ const SellItem = () => {
                     <label style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '10px',
-                      padding: '12px 24px',
+                      gap: '8px',
+                      padding: '10px 18px',
                       border: paymentStatus === 'partially_paid' ? '2px solid #ffc107' : '1px solid #dee2e6',
                       borderRadius: '8px',
                       backgroundColor: paymentStatus === 'partially_paid' ? '#fff8e1' : '#ffffff',
                       cursor: 'pointer',
                       transition: 'all 0.2s ease',
-                      minWidth: '150px',
+                      minWidth: '130px',
                       justifyContent: 'center',
                       boxShadow: paymentStatus === 'partially_paid' ? '0 2px 4px rgba(255, 193, 7, 0.2)' : 'none'
                     }}>
@@ -1366,11 +1362,11 @@ const SellItem = () => {
                     <div style={{
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: '6px',
-                      minWidth: '220px'
+                      gap: '5px',
+                      minWidth: '200px'
                     }}>
                       <label style={{ 
-                        fontSize: '12px', 
+                        fontSize: '11px', 
                         fontWeight: '600', 
                         color: '#495057',
                         margin: 0,
@@ -1382,12 +1378,12 @@ const SellItem = () => {
                       <div style={{ position: 'relative' }}>
                         <span style={{
                           position: 'absolute',
-                          left: '12px',
+                          left: '10px',
                           top: '50%',
                           transform: 'translateY(-50%)',
                           color: '#6c757d',
                           fontWeight: '600',
-                          fontSize: '14px'
+                          fontSize: '13px'
                         }}>₹</span>
                         <input
                           type="number"
@@ -1438,8 +1434,8 @@ const SellItem = () => {
                           }}
                           disabled={actionInProgress}
                           style={{
-                            padding: '11px 12px 11px 32px',
-                            fontSize: '15px',
+                            padding: '9px 10px 9px 28px',
+                            fontSize: '14px',
                             fontWeight: '600',
                             border: '1px solid #ced4da',
                             borderRadius: '8px',
@@ -1460,7 +1456,7 @@ const SellItem = () => {
                         />
                       </div>
                       <div style={{
-                        fontSize: '11px',
+                        fontSize: '10px',
                         color: '#6c757d',
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -1478,11 +1474,82 @@ const SellItem = () => {
                 </div>
               </div>
             )}
+            
+            {/* Action Buttons at Bottom */}
+            {!previewData.transactionId && (
+              <div style={{ 
+                display: 'flex', 
+                gap: '15px', 
+                marginTop: '20px',
+                marginBottom: '30px',
+                paddingTop: '15px',
+                paddingBottom: '20px',
+                borderTop: '2px solid #e9ecef',
+                width: '100%'
+              }}>
+                <button 
+                  onClick={handleBackToEditClick}
+                  className="btn btn-secondary"
+                  disabled={isProcessing}
+                  aria-disabled={isProcessing}
+                  aria-label="Go back to edit the bill"
+                  tabIndex={isProcessing ? -1 : 0}
+                  style={{
+                    flex: '1 1 auto',
+                    padding: '12px 28px',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    minWidth: '150px'
+                  }}
+                >
+                  Back to Edit
+                </button>
+                <button 
+                  onClick={handleSubmitClick}
+                  className="btn btn-success"
+                  disabled={isProcessing}
+                  aria-disabled={isProcessing}
+                  aria-label={loading.submit ? 'Processing sale transaction' : 'Confirm and submit sale'}
+                  tabIndex={isProcessing ? -1 : 0}
+                  style={{
+                    flex: '1 1 auto',
+                    padding: '12px 28px',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    minWidth: '150px'
+                  }}
+                >
+                  {loading.submit ? (
+                    <>
+                      <div style={{ 
+                        display: 'inline-block',
+                        width: '16px',
+                        height: '16px',
+                        border: '2px solid rgba(255, 255, 255, 0.3)',
+                        borderTop: '2px solid #fff',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite',
+                        marginRight: '8px'
+                      }}></div>
+                      Processing...
+                    </>
+                  ) : (
+                    'Confirm Sale'
+                  )}
+                </button>
+              </div>
+            )}
+            </div>
+            
             {previewData.transactionId && (
               <div className="payment-section" style={{
                 background: 'linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%)',
                 border: '2px solid #28a745',
-                boxShadow: '0 4px 16px rgba(40, 167, 69, 0.2)'
+                boxShadow: '0 4px 16px rgba(40, 167, 69, 0.2)',
+                marginTop: '20px',
+                marginBottom: '100px',
+                padding: '25px',
+                paddingBottom: '60px'
               }}>
                 <div style={{ 
                   display: 'flex', 
@@ -1531,10 +1598,12 @@ const SellItem = () => {
                   gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                   gap: '20px',
                   padding: '25px',
+                  paddingBottom: '30px',
                   backgroundColor: 'white',
                   borderRadius: '12px',
                   border: '1px solid #c3e6cb',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)'
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                  marginBottom: '20px'
                 }}>
                   <div style={{
                     padding: '15px',
@@ -1670,31 +1739,6 @@ const SellItem = () => {
             )}
 
               </div>
-              {/* Scroll to Top Button */}
-              {showScrollToTop && (
-                <button
-                  onClick={handleScrollToTop}
-                  className="btn btn-primary"
-                  aria-label="Scroll to top of bill preview"
-                  style={{
-                    position: 'absolute',
-                    bottom: '20px',
-                    right: '20px',
-                    borderRadius: '50%',
-                    width: '50px',
-                    height: '50px',
-                    padding: '0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-                    zIndex: 10,
-                    animation: 'fadeIn 0.3s ease-in'
-                  }}
-                >
-                  ↑
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -1795,12 +1839,16 @@ const SellItem = () => {
                       }}
                       tabIndex={0}
                     >
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: '600', color: '#2c3e50' }}>{party.party_name}</div>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '10px'
+                      }}>
+                        <span style={{ fontWeight: '600', color: '#2c3e50' }}>{party.party_name}</span>
                         {party.mobile_number && (
-                          <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px' }}>
+                          <span style={{ fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>
                             📱 {party.mobile_number}
-                          </div>
+                          </span>
                         )}
                       </div>
                     </div>
