@@ -960,6 +960,49 @@ const AddItem = () => {
                 </tbody>
               </table>
               
+              {/* Action Buttons */}
+              <div style={{ 
+                marginTop: '25px', 
+                display: 'flex', 
+                gap: '15px', 
+                alignItems: 'center',
+                padding: '18px',
+                background: '#f8f9fa',
+                borderRadius: '10px',
+                border: '1px solid #e1e8ed',
+                flexWrap: 'wrap'
+              }}>
+                <button 
+                  onClick={() => {
+                    setShowItemSearchModal(true);
+                  }} 
+                  className="btn btn-secondary" 
+                  style={{
+                    padding: '12px 28px',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    flex: '1 1 auto',
+                    minWidth: '180px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease',
+                    boxShadow: '0 4px 6px rgba(102, 126, 234, 0.3)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 6px rgba(102, 126, 234, 0.3)';
+                  }}
+                >
+                  ➕ Add More Item
+                </button>
+              </div>
+              
               {/* Payment section (Buyer purchase) */}
               <div style={{
                 marginTop: '16px',

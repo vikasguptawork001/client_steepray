@@ -52,11 +52,13 @@ const ReturnItem = () => {
   useEffect(() => {
     if (searchQuery.length >= 2) {
       searchItems();
-      setShowItemSearchModal(true);
+      // Auto-open modal when user types in the search input (not when button is clicked)
+      if (!showItemSearchModal) {
+        setShowItemSearchModal(true);
+      }
     } else {
+      // Clear suggestions when search is cleared
       setSuggestedItems([]);
-      // Don't close modal when search is cleared - only close explicitly
-      // setShowItemSearchModal(false);
     }
   }, [searchQuery]);
 
@@ -1127,7 +1129,42 @@ const ReturnItem = () => {
                     </tbody>
                     <tfoot>
                       <tr>
-                        <td colSpan="7" style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                        <td colSpan="2" style={{ textAlign: 'left', padding: '10px' }}>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              // Clear any previous search and open modal
+                              setSearchQuery('');
+                              setSuggestedItems([]);
+                              setSelectedItemIds(new Set());
+                              setShowItemSearchModal(true);
+                            }} 
+                            className="btn btn-secondary" 
+                            style={{
+                              padding: '10px 20px',
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                              border: 'none',
+                              color: '#ffffff',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s ease',
+                              boxShadow: '0 4px 6px rgba(102, 126, 234, 0.3)',
+                              borderRadius: '6px'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'translateY(-2px)';
+                              e.currentTarget.style.boxShadow = '0 6px 12px rgba(102, 126, 234, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'translateY(0)';
+                              e.currentTarget.style.boxShadow = '0 4px 6px rgba(102, 126, 234, 0.3)';
+                            }}
+                          >
+                            ➕ Add More Item
+                          </button>
+                        </td>
+                        <td colSpan="5" style={{ textAlign: 'right', fontWeight: 'bold' }}>
                           Total Return Amount ({getValidItemsCount()} {getValidItemsCount() === 1 ? 'item' : 'items'}):
                         </td>
                         <td style={{ fontWeight: 'bold' }}>₹{calculateTotal().toFixed(2)}</td>
@@ -1190,13 +1227,19 @@ const ReturnItem = () => {
                     placeholder="Enter return reason (optional)"
                   />
                 </div>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                
+                {/* Preview Return Button at Last */}
+                <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
                   <button 
                     type="button" 
-                    className="btn btn-secondary"
+                    className="btn btn-primary"
                     onClick={handlePreview}
                     disabled={isProcessing}
                     style={{
+                      padding: '12px 28px',
+                      fontSize: '15px',
+                      fontWeight: '600',
+                      minWidth: '180px',
                       opacity: isProcessing ? 0.6 : 1,
                       cursor: isProcessing ? 'not-allowed' : 'pointer'
                     }}
