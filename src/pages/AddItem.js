@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import TransactionLoader from '../components/TransactionLoader';
 import ItemSearchModal from '../components/ItemSearchModal';
+import ActionMenu from '../components/ActionMenu';
 import './AddItem.css';
 
 const AddItem = () => {
@@ -35,6 +36,7 @@ const AddItem = () => {
     tax_rate: 18,
     sale_rate: 0,
     purchase_rate: 0,
+    quantity: 1,
     alert_quantity: 0,
     rack_number: '',
     remarks: ''
@@ -224,12 +226,7 @@ const AddItem = () => {
 
   const addItemToCart = async (item) => {
     try {
-      // Check if item is out of stock
-      if ((item.quantity || 0) <= 0) {
-        toast.warning(`⚠️ "${item.product_name || item.item_name}" is out of stock and cannot be added`);
-        return;
-      }
-
+      // Note: We allow adding items even if out of stock, since this is for filling inventory
       // Fetch full item details from database to get all saved data
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
       const fullItemData = response.data.item;
@@ -313,6 +310,11 @@ const AddItem = () => {
       return;
     }
 
+    if (!newItem.quantity || newItem.quantity <= 0) {
+      toast.error('Quantity is required and must be greater than 0');
+      return;
+    }
+
     // Validate sale_rate >= purchase_rate
     if (parseFloat(newItem.sale_rate) < parseFloat(newItem.purchase_rate)) {
       toast.error('Sale rate must be greater than or equal to purchase rate');
@@ -354,9 +356,45 @@ const AddItem = () => {
         }
       });
       
-      // Fetch the created item to get all saved data, then add to cart
+      // Fetch the created item to get all saved data, then add to cart with specified quantity
       const createdItemResponse = await apiClient.get(`${config.api.items}/${response.data.id}`);
-      addItemToCart(createdItemResponse.data.item);
+      const createdItem = createdItemResponse.data.item;
+      
+      // Add item to cart with the specified quantity
+      const itemQuantity = parseInt(newItem.quantity) || 1;
+      const existingItem = selectedItems.find(i => i.item_id === createdItem.id);
+      if (existingItem) {
+        // If item already in cart, increment quantity
+        setSelectedItems(selectedItems.map(i =>
+          i.item_id === createdItem.id ? { ...i, quantity: i.quantity + itemQuantity } : i
+        ));
+      } else {
+        // Parse tax_rate
+        const taxRateValue = createdItem.tax_rate !== undefined && createdItem.tax_rate !== null
+          ? parseFloat(createdItem.tax_rate)
+          : 18;
+        const validTaxRates = [5, 18, 28];
+        const finalTaxRate = !isNaN(taxRateValue) && validTaxRates.includes(taxRateValue) 
+          ? taxRateValue 
+          : 18;
+        
+        // Add new item to cart with specified quantity
+        setSelectedItems([...selectedItems, {
+          item_id: createdItem.id,
+          product_name: createdItem.product_name,
+          product_code: createdItem.product_code || '',
+          brand: createdItem.brand || '',
+          hsn_number: createdItem.hsn_number || '',
+          tax_rate: finalTaxRate,
+          sale_rate: parseFloat(createdItem.sale_rate) || 0,
+          purchase_rate: parseFloat(createdItem.purchase_rate) || 0,
+          quantity: itemQuantity,
+          alert_quantity: parseInt(createdItem.alert_quantity) || 0,
+          rack_number: createdItem.rack_number || '',
+          remarks: createdItem.remarks || '',
+          current_quantity: parseInt(createdItem.quantity) || 0
+        }]);
+      }
       
       // Reset form
       setNewItem({
@@ -367,6 +405,7 @@ const AddItem = () => {
         tax_rate: 18,
         sale_rate: 0,
         purchase_rate: 0,
+        quantity: 1,
         alert_quantity: 0,
         rack_number: '',
         remarks: ''
@@ -687,6 +726,23 @@ const AddItem = () => {
               </div>
               <div className="form-row">
                 <div className="form-group">
+                  <label>Quantity *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newItem.quantity === 0 ? '' : newItem.quantity}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewItem({ ...newItem, quantity: val === '' ? 0 : parseInt(val) || 0 });
+                    }}
+                    placeholder="1"
+                    required
+                  />
+                  <small style={{ color: '#666', fontSize: '12px', display: 'block', marginTop: '5px' }}>
+                    Number of items to add to inventory
+                  </small>
+                </div>
+                <div className="form-group">
                   <label>Alert Quantity</label>
                   <input
                     type="number"
@@ -872,6 +928,7 @@ const AddItem = () => {
                     tax_rate: 18,
                     sale_rate: 0,
                     purchase_rate: 0,
+                    quantity: 1,
                     alert_quantity: 0,
                     rack_number: '',
                     remarks: ''
@@ -957,13 +1014,18 @@ const AddItem = () => {
                         </span>
                       </td>
                       <td>
-                        <button
-                          onClick={() => removeItem(item.item_id)}
-                          className="btn btn-danger"
-                          style={{ padding: '5px 10px' }}
-                        >
-                          Remove
-                        </button>
+                        <ActionMenu
+                          itemId={item.item_id}
+                          itemName={item.product_name}
+                          actions={[
+                            {
+                              label: 'Remove',
+                              icon: '🗑️',
+                              danger: true,
+                              onClick: (id) => removeItem(id)
+                            }
+                          ]}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -1111,6 +1173,7 @@ const AddItem = () => {
         onSearchChange={setSearchQuery}
         title="Search Items to Purchase"
         selectedItems={selectedItems}
+        allowOutOfStock={true}
       />
     </Layout>
   );

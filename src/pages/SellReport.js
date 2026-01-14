@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { getLocalDateString } from '../utils/dateUtils';
+import * as XLSX from 'xlsx';
 import './Report.css';
 
 const SellReport = () => {
@@ -20,13 +21,28 @@ const SellReport = () => {
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingFiltered, setExportingFiltered] = useState(false);
+
+  // Validate dates
+  const validateDates = () => {
+    if (fromDate && toDate && fromDate > toDate) {
+      alert('From date cannot be after To date. Please select valid dates.');
+      return false;
+    }
+    return true;
+  };
 
   useEffect(() => {
-    fetchReport();
+    if (validateDates()) {
+      fetchReport();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, gstFilter, page, limit]);
 
   const fetchReport = async () => {
+    if (!validateDates()) {
+      return;
+    }
     try {
       setLoading(true);
       const from = getLocalDateString(fromDate);
@@ -46,10 +62,15 @@ const SellReport = () => {
 
   const exportToExcel = async () => {
     if (exporting) return;
+    if (!validateDates()) {
+      return;
+    }
     setExporting(true);
     try {
       const from = getLocalDateString(fromDate);
       const to = getLocalDateString(toDate);
+      // Export ALL results from API, ignoring GST filter and pagination
+      // Only date range is applied as that's a required filter
       const response = await apiClient.get(config.api.salesReportExport, {
         params: { from_date: from, to_date: to },
         responseType: 'blob'
@@ -58,7 +79,7 @@ const SellReport = () => {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `sales_report_${from}_${to}.xlsx`);
+      link.setAttribute('download', `sales_report_all_${from}_${to}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -70,22 +91,67 @@ const SellReport = () => {
     }
   };
 
+  const exportFilteredToExcel = () => {
+    if (exportingFiltered || transactions.length === 0) return;
+    
+    setExportingFiltered(true);
+    try {
+      const data = transactions.map(txn => ({
+        'Date': new Date(txn.created_at).toLocaleString(),
+        'Bill Number': txn.bill_number,
+        'Party Name': txn.party_name,
+        'Total Amount': parseFloat(txn.total_amount).toFixed(2),
+        'Paid Amount': parseFloat(txn.paid_amount).toFixed(2),
+        'Balance Amount': parseFloat(txn.balance_amount).toFixed(2),
+        'Payment Status': txn.payment_status.replace('_', ' ').toUpperCase(),
+        'GST': txn.with_gst ? 'GST' : 'Non-GST'
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Sales Report');
+      
+      const from = getLocalDateString(fromDate);
+      const to = getLocalDateString(toDate);
+      XLSX.writeFile(wb, `sales_report_filtered_${from}_${to}.xlsx`);
+      alert('Filtered Excel file exported successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export. Please try again.');
+    } finally {
+      setExportingFiltered(false);
+    }
+  };
+
   return (
     <Layout>
       <div className="report">
         <div className="report-header">
           <h2>Sell Report</h2>
-          <button 
-            onClick={exportToExcel} 
-            className="btn btn-success"
-            disabled={exporting}
-            style={{
-              opacity: exporting ? 0.6 : 1,
-              cursor: exporting ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {exporting ? 'Exporting...' : 'Export to Excel'}
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button 
+              onClick={exportToExcel} 
+              className="btn btn-success"
+              disabled={exporting}
+              style={{
+                opacity: exporting ? 0.6 : 1,
+                cursor: exporting ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exporting ? 'Exporting...' : 'Export to Excel'}
+            </button>
+            <button 
+              onClick={exportFilteredToExcel} 
+              className="btn btn-primary"
+              disabled={exportingFiltered || transactions.length === 0}
+              style={{
+                opacity: (exportingFiltered || transactions.length === 0) ? 0.6 : 1,
+                cursor: (exportingFiltered || transactions.length === 0) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exportingFiltered ? 'Exporting...' : 'Export to Excel with Filtered'}
+            </button>
+          </div>
         </div>
 
         <div className="card">
@@ -94,18 +160,32 @@ const SellReport = () => {
               <label>From Date</label>
               <DatePicker
                 selected={fromDate}
-                onChange={(date) => setFromDate(date)}
+                onChange={(date) => {
+                  setFromDate(date);
+                  // Auto-adjust toDate if fromDate is after toDate
+                  if (date && toDate && date > toDate) {
+                    setToDate(date);
+                  }
+                }}
                 dateFormat="dd-MM-yyyy"
                 className="date-input"
+                maxDate={toDate}
               />
             </div>
             <div className="form-group">
               <label>To Date</label>
               <DatePicker
                 selected={toDate}
-                onChange={(date) => setToDate(date)}
+                onChange={(date) => {
+                  setToDate(date);
+                  // Auto-adjust fromDate if toDate is before fromDate
+                  if (date && fromDate && date < fromDate) {
+                    setFromDate(date);
+                  }
+                }}
                 dateFormat="dd-MM-yyyy"
                 className="date-input"
+                minDate={fromDate}
               />
             </div>
             <div className="form-group">
@@ -120,7 +200,16 @@ const SellReport = () => {
                 <option value="without_gst">Without GST</option>
               </select>
             </div>
-            <button onClick={() => { setPage(1); fetchReport(); }} className="btn btn-primary">
+            <button 
+              onClick={() => { 
+                setFromDate(new Date());
+                setToDate(new Date());
+                setGstFilter('all');
+                setPage(1);
+                setLimit(50);
+              }} 
+              className="btn btn-primary"
+            >
               Refresh
             </button>
             <div className="form-group">

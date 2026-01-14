@@ -9,7 +9,8 @@ const ItemSearchModal = ({
   searchQuery,
   onSearchChange,
   title = "Search Items",
-  selectedItems = [] // Array of items already in cart
+  selectedItems = [], // Array of items already in cart
+  allowOutOfStock = false // Allow selecting out-of-stock items (for inventory filling)
 }) => {
   const searchInputRef = useRef(null);
   const [selectedItemIds, setSelectedItemIds] = useState(new Set());
@@ -48,7 +49,7 @@ const ItemSearchModal = ({
 
   const handleCheckboxChange = (item) => {
     const isOutOfStock = (item.quantity || 0) <= 0;
-    if (isOutOfStock) return;
+    if (isOutOfStock && !allowOutOfStock) return;
 
     setSelectedItemIds(prev => {
       const newSet = new Set(prev);
@@ -64,7 +65,9 @@ const ItemSearchModal = ({
   };
 
   const handleSelectAll = () => {
-    const availableItems = items.filter(item => (item.quantity || 0) > 0);
+    const availableItems = allowOutOfStock 
+      ? items 
+      : items.filter(item => (item.quantity || 0) > 0);
     availableItems.forEach(item => {
       if (!selectedItemIds.has(item.id)) {
         onItemSelect(item);
@@ -79,7 +82,9 @@ const ItemSearchModal = ({
 
   if (!isOpen) return null;
 
-  const availableItems = items.filter(item => (item.quantity || 0) > 0);
+  const availableItems = allowOutOfStock 
+    ? items 
+    : items.filter(item => (item.quantity || 0) > 0);
   const selectedCount = selectedItemIds.size;
 
   return (
@@ -148,14 +153,14 @@ const ItemSearchModal = ({
                 return (
                   <div
                     key={item.id}
-                    className={`item-search-modal-card ${isSelected ? 'selected' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
-                    onClick={() => !isOutOfStock && handleCheckboxChange(item)}
+                    className={`item-search-modal-card ${isSelected ? 'selected' : ''} ${isOutOfStock && !allowOutOfStock ? 'out-of-stock' : ''}`}
+                    onClick={() => (allowOutOfStock || !isOutOfStock) && handleCheckboxChange(item)}
                   >
                     <div className="item-search-modal-card-header">
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        disabled={isOutOfStock}
+                        disabled={isOutOfStock && !allowOutOfStock}
                         onChange={() => handleCheckboxChange(item)}
                         onClick={(e) => e.stopPropagation()}
                         className="item-search-modal-checkbox"

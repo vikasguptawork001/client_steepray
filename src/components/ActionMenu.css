@@ -1,0 +1,287 @@
+.action-menu-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.action-menu-button {
+  background: transparent;
+  border: 1px solid #e1e8ed;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  min-width: 32px;
+  height: 32px;
+  color: #495057;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.action-menu-button:hover:not(.disabled) {
+  background: #f8f9fa;
+  border-color: #3498db;
+  color: #3498db;
+}
+
+.action-menu-button:active:not(.disabled) {
+  background: #e9ecef;
+  transform: scale(0.98);
+}
+
+.action-menu-button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-menu-button.loading {
+  cursor: wait;
+  pointer-events: none;
+}
+
+.action-menu-dots {
+  font-weight: bold;
+  letter-spacing: 2px;
+  user-select: none;
+  display: inline-block;
+  transform: rotate(90deg);
+  line-height: 1;
+}
+
+/* Modal Overlay */
+.action-menu-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Modal Container */
+.action-menu-modal {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  width: 100%;
+  max-width: 400px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.2s ease-out;
+  overflow: hidden;
+}
+
+.action-menu-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e1e8ed;
+}
+
+.action-menu-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.action-menu-modal-close {
+  background: none;
+  border: none;
+  font-size: 28px;
+  line-height: 1;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.action-menu-modal-close:hover {
+  background: #f8f9fa;
+  color: #2c3e50;
+}
+
+.action-menu-modal-content {
+  padding: 8px 0;
+  overflow-y: auto;
+  max-height: calc(100vh - 120px);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.action-menu-item {
+  width: 100%;
+  padding: 10px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #2c3e50;
+  transition: background-color 0.15s ease;
+  white-space: nowrap;
+  overflow: visible;
+  min-width: 100%;
+}
+
+.action-menu-item:hover:not(.disabled) {
+  background: #f8f9fa;
+  color: #2c3e50;
+}
+
+.action-menu-item:active:not(.disabled) {
+  background: #e9ecef;
+}
+
+.action-menu-item.danger {
+  color: #dc3545;
+}
+
+.action-menu-item.danger:hover:not(.disabled) {
+  background: #fff5f5;
+  color: #c82333;
+}
+
+.action-menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.action-menu-item.loading {
+  cursor: wait;
+  background: #f8f9fa !important;
+}
+
+.action-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.action-menu-label {
+  flex: 1;
+  text-align: left;
+}
+
+/* Custom scrollbar for modal content */
+.action-menu-modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.action-menu-modal-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.action-menu-modal-content::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.action-menu-modal-content::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Firefox scrollbar */
+.action-menu-modal-content {
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f1f1f1;
+}
+
+/* Loading Spinner Styles */
+.action-menu-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(73, 80, 87, 0.3);
+  border-top: 2px solid #495057;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.action-menu-spinner-small {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(44, 62, 80, 0.3);
+  border-top: 2px solid #2c3e50;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Custom scrollbar for dropdown */
+.action-menu-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.action-menu-dropdown::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.action-menu-dropdown::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.action-menu-dropdown::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Firefox scrollbar */
+.action-menu-dropdown {
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f1f1f1;
+}
+
+/* High z-index ensures visibility above other elements (already set above) */

@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import TransactionLoader from '../components/TransactionLoader';
 import ItemSearchModal from '../components/ItemSearchModal';
+import ActionMenu from '../components/ActionMenu';
 import { numberToWords } from '../utils/numberToWords';
 import { getLocalDateString } from '../utils/dateUtils';
 import {
@@ -1023,14 +1024,19 @@ const SellItem = () => {
                       <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontWeight: '600' }}>₹{parseFloat(item.itemTotalAfterDiscount || itemTotal || 0).toFixed(2)}</td>
                       {!previewData.transactionId && (
                         <td style={{ textAlign: 'center', padding: '8px', border: '1px solid #ddd' }}>
-                        <button
-                          onClick={() => handleRemoveFromPreview(item.item_id)}
-                          className="btn btn-danger"
-                            style={{ padding: '5px 10px', fontSize: '11px' }}
-                        >
-                          Remove
-                        </button>
-                      </td>
+                          <ActionMenu
+                            itemId={item.item_id}
+                            itemName={item.product_name}
+                            actions={[
+                              {
+                                label: 'Remove',
+                                icon: '🗑️',
+                                danger: true,
+                                onClick: (id) => handleRemoveFromPreview(id)
+                              }
+                            ]}
+                          />
+                        </td>
                       )}
                     </tr>
                   );
@@ -2335,19 +2341,23 @@ const SellItem = () => {
                             ₹{(parseFloat(item.sale_rate || 0) * parseInt(item.quantity || 0)).toFixed(2)}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                          <button
-                            onClick={() => {
-                              if (actionInProgress) return;
-                              handleRemoveItem(item.item_id);
-                              toast.info(`Removed ${item.product_name} from cart`);
-                            }}
-                            className="btn btn-danger"
-                            disabled={actionInProgress}
-                            style={{ padding: '6px 14px', fontSize: '13px' }}
-                          >
-                            Remove
-                          </button>
-                        </td>
+                            <ActionMenu
+                              itemId={item.item_id}
+                              itemName={item.product_name}
+                              disabled={actionInProgress}
+                              actions={[
+                                {
+                                  label: 'Remove',
+                                  icon: '🗑️',
+                                  danger: true,
+                                  onClick: (id, name) => {
+                                    handleRemoveItem(id);
+                                    toast.info(`Removed ${name} from cart`);
+                                  }
+                                }
+                              ]}
+                            />
+                          </td>
                       </tr>
                     );
                   })}

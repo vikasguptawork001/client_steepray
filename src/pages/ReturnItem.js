@@ -5,6 +5,7 @@ import config from '../config/config';
 import { useToast } from '../context/ToastContext';
 import TransactionLoader from '../components/TransactionLoader';
 import ItemSearchModal from '../components/ItemSearchModal';
+import ActionMenu from '../components/ActionMenu';
 import './ReturnItem.css';
 
 const ReturnItem = () => {
@@ -168,8 +169,9 @@ const ReturnItem = () => {
     let skippedCount = 0;
     
     for (const item of itemsToAdd) {
-      // Skip items with 0 quantity
-      if ((item.quantity || 0) <= 0) {
+      // For buyer returns, skip items with 0 quantity
+      // For seller returns, allow out-of-stock items (seller is giving them back)
+      if ((item.quantity || 0) <= 0 && partyType === 'buyer') {
         skippedCount++;
         continue;
       }
@@ -229,8 +231,9 @@ const ReturnItem = () => {
 
   const addItemToCart = async (item) => {
     try {
-      // Check if item is out of stock
-      if ((item.quantity || 0) <= 0) {
+      // For buyer returns, prevent adding out-of-stock items
+      // For seller returns, allow out-of-stock items (seller is giving them back)
+      if ((item.quantity || 0) <= 0 && partyType === 'buyer') {
         toast.warning(`⚠️ "${item.product_name || item.item_name}" is out of stock and cannot be added`);
         return;
       }
@@ -349,9 +352,11 @@ const ReturnItem = () => {
       return;
     }
 
-    // Validate stock availability for buyer returns
+    // Validate stock availability for buyer returns only
+    // For seller returns, out-of-stock items are allowed (seller is giving them back)
     for (const item of validItems) {
       // For buyer returns, check if stock is available
+      // For seller returns, no stock check needed (seller is returning items to us)
       if (partyType === 'buyer' && item.quantity > item.available_quantity) {
         toast.error(`Insufficient stock for ${item.product_name}. Available: ${item.available_quantity}, Requested: ${item.quantity}`);
         return;
@@ -709,7 +714,11 @@ const ReturnItem = () => {
                     // Ctrl+A or Cmd+A to select all available items
                     if ((e.ctrlKey || e.metaKey) && e.key === 'a' && suggestedItems.length > 0) {
                       e.preventDefault();
-                      const availableItems = suggestedItems.filter(item => (item.quantity || 0) > 0);
+                      // For seller returns, allow selecting all items (including out-of-stock)
+                      // For buyer returns, only select items with stock
+                      const availableItems = partyType === 'seller' 
+                        ? suggestedItems 
+                        : suggestedItems.filter(item => (item.quantity || 0) > 0);
                       if (availableItems.length > 0) {
                         setSelectedItemIds(new Set(availableItems.map(item => item.id)));
                         toast.info(`Selected ${availableItems.length} available item${availableItems.length !== 1 ? 's' : ''}`);
@@ -750,8 +759,9 @@ const ReturnItem = () => {
                             key={item.id}
                             className={`suggestion-item ${selectedItemIds.has(item.id) ? 'selected' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
                             onClick={(e) => {
-                              // Disable selection if out of stock
-                              if (isOutOfStock) {
+                              // For buyer returns, disable selection if out of stock
+                              // For seller returns, allow out-of-stock items (seller is giving them back)
+                              if (isOutOfStock && partyType === 'buyer') {
                                 toast.warning(`⚠️ "${item.product_name}" is out of stock`);
                                 return;
                               }
@@ -759,7 +769,9 @@ const ReturnItem = () => {
                               handleToggleItemSelection(item.id);
                             }}
                             onKeyDown={(e) => {
-                              if (isOutOfStock) {
+                              // For buyer returns, prevent selection if out of stock
+                              // For seller returns, allow out-of-stock items
+                              if (isOutOfStock && partyType === 'buyer') {
                                 if (e.key === 'Enter' || e.key === ' ') {
                                   e.preventDefault();
                                   toast.warning(`⚠️ "${item.product_name}" is out of stock`);
@@ -768,7 +780,7 @@ const ReturnItem = () => {
                               }
                               if (e.key === 'Enter' || e.key === ' ') {
                                 e.preventDefault();
-                                if (!isOutOfStock) {
+                                if (!isOutOfStock || partyType === 'seller') {
                                   handleToggleItemSelection(item.id);
                                 }
                               } else if (e.key === 'ArrowDown') {
@@ -789,23 +801,23 @@ const ReturnItem = () => {
                                 itemSearchInputRef.current?.focus?.({ preventScroll: true });
                               }
                             }}
-                            tabIndex={isOutOfStock ? -1 : 0}
+                            tabIndex={(isOutOfStock && partyType === 'buyer') ? -1 : 0}
                             style={{
                               display: 'flex',
                               justifyContent: 'space-between',
                               alignItems: 'center',
-                              cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                              cursor: (isOutOfStock && partyType === 'buyer') ? 'not-allowed' : 'pointer',
                               position: 'relative',
-                              opacity: isOutOfStock ? 0.6 : 1
+                              opacity: (isOutOfStock && partyType === 'buyer') ? 0.6 : 1
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
                               <input
                                 type="checkbox"
                                 checked={selectedItemIds.has(item.id)}
-                                disabled={isOutOfStock}
+                                disabled={isOutOfStock && partyType === 'buyer'}
                                 onChange={(e) => {
-                                  if (isOutOfStock) {
+                                  if (isOutOfStock && partyType === 'buyer') {
                                     e.preventDefault();
                                     return;
                                   }
@@ -813,7 +825,7 @@ const ReturnItem = () => {
                                   handleToggleItemSelection(item.id);
                                 }}
                                 onClick={(e) => {
-                                  if (isOutOfStock) {
+                                  if (isOutOfStock && partyType === 'buyer') {
                                     e.preventDefault();
                                     e.stopPropagation();
                                     return;
@@ -823,10 +835,10 @@ const ReturnItem = () => {
                                 style={{
                                   width: '18px',
                                   height: '18px',
-                                  cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                                  cursor: (isOutOfStock && partyType === 'buyer') ? 'not-allowed' : 'pointer',
                                   accentColor: '#3498db',
                                   flexShrink: 0,
-                                  opacity: isOutOfStock ? 0.5 : 1
+                                  opacity: (isOutOfStock && partyType === 'buyer') ? 0.5 : 1
                                 }}
                               />
                               <div style={{ flex: 1 }}>
@@ -839,7 +851,7 @@ const ReturnItem = () => {
                                   gap: '8px'
                                 }}>
                                   {item.product_name}
-                                  {isOutOfStock && (
+                                  {isOutOfStock && partyType === 'buyer' && (
                                     <span style={{
                                       fontSize: '10px',
                                       padding: '2px 6px',
@@ -849,6 +861,18 @@ const ReturnItem = () => {
                                       fontWeight: '600'
                                     }}>
                                       OUT OF STOCK
+                                    </span>
+                                  )}
+                                  {isOutOfStock && partyType === 'seller' && (
+                                    <span style={{
+                                      fontSize: '10px',
+                                      padding: '2px 6px',
+                                      backgroundColor: '#ffc107',
+                                      color: '#856404',
+                                      borderRadius: '4px',
+                                      fontWeight: '600'
+                                    }}>
+                                      OUT OF STOCK (Can Return)
                                     </span>
                                   )}
                                   {!isOutOfStock && selectedItemIds.has(item.id) && (
@@ -920,13 +944,18 @@ const ReturnItem = () => {
                             </button>
                             <button
                               onClick={() => {
-                                setSelectedItemIds(new Set(suggestedItems.filter(i => (i.quantity || 0) > 0).map(i => i.id)));
+                                // For seller returns, allow selecting all items (including out-of-stock)
+                                // For buyer returns, only select items with stock
+                                const selectableItems = partyType === 'seller' 
+                                  ? suggestedItems 
+                                  : suggestedItems.filter(i => (i.quantity || 0) > 0);
+                                setSelectedItemIds(new Set(selectableItems.map(i => i.id)));
                               }}
                               className="btn btn-secondary"
-                              disabled={suggestedItems.filter(i => (i.quantity || 0) > 0).length === 0}
-                              aria-disabled={suggestedItems.filter(i => (i.quantity || 0) > 0).length === 0}
+                              disabled={suggestedItems.length === 0}
+                              aria-disabled={suggestedItems.length === 0}
                               aria-label="Select all available items"
-                              tabIndex={suggestedItems.filter(i => (i.quantity || 0) > 0).length === 0 ? -1 : 0}
+                              tabIndex={suggestedItems.length === 0 ? -1 : 0}
                               style={{ padding: '8px 16px', fontSize: '13px' }}
                             >
                               Select All
@@ -1022,6 +1051,11 @@ const ReturnItem = () => {
                               onChange={(e) => updateItemQuantity(item.item_id, e.target.value)}
                               min="0"
                               max={partyType === 'buyer' ? item.available_quantity : undefined}
+                              title={partyType === 'seller' && item.available_quantity === 0 
+                                ? 'Out of stock item - seller is returning this to you' 
+                                : partyType === 'buyer' 
+                                  ? `Maximum: ${item.available_quantity}` 
+                                  : 'Enter return quantity'}
                               style={{ 
                                 width: '80px', 
                                 padding: '5px',
@@ -1124,14 +1158,18 @@ const ReturnItem = () => {
                             )}
                           </td>
                           <td>
-                            <button
-                              type="button"
-                              onClick={() => removeItem(item.item_id)}
-                              className="btn btn-danger"
-                              style={{ padding: '5px 10px' }}
-                            >
-                              Remove
-                            </button>
+                            <ActionMenu
+                              itemId={item.item_id}
+                              itemName={item.product_name}
+                              actions={[
+                                {
+                                  label: 'Remove',
+                                  icon: '🗑️',
+                                  danger: true,
+                                  onClick: (id) => removeItem(id)
+                                }
+                              ]}
+                            />
                           </td>
                         </tr>
                       ))}
@@ -1532,6 +1570,7 @@ const ReturnItem = () => {
         onSearchChange={setSearchQuery}
         title="Search Items for Return"
         selectedItems={selectedItems}
+        allowOutOfStock={partyType === 'seller'} // Allow out-of-stock items for seller returns
       />
     </Layout>
   );

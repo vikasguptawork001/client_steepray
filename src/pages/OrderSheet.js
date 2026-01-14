@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import { getLocalDateString } from '../utils/dateUtils';
+import * as XLSX from 'xlsx';
 import './OrderSheet.css';
 
 const OrderSheet = () => {
@@ -12,6 +13,7 @@ const OrderSheet = () => {
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingFiltered, setExportingFiltered] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -56,23 +58,63 @@ const OrderSheet = () => {
     }
   };
 
+  const exportFilteredToExcel = () => {
+    if (exportingFiltered || orders.length === 0) return;
+    
+    setExportingFiltered(true);
+    try {
+      const data = orders.map((order, index) => ({
+        'S.No': index + 1,
+        'Product Name': order.product_name,
+        'Product Code': order.product_code || 'N/A',
+        'Brand': order.brand || 'N/A',
+        'Quantity': order.current_quantity
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Order Sheet');
+      
+      XLSX.writeFile(wb, `order_sheet_filtered_${getLocalDateString()}.xlsx`);
+      alert('Filtered Excel file exported successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export. Please try again.');
+    } finally {
+      setExportingFiltered(false);
+    }
+  };
+
 
   return (
     <Layout>
       <div className="order-sheet">
         <div className="order-header">
           <h2>Order Sheet</h2>
-          <button 
-            onClick={exportToExcel} 
-            className="btn btn-success"
-            disabled={exporting}
-            style={{
-              opacity: exporting ? 0.6 : 1,
-              cursor: exporting ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {exporting ? 'Exporting...' : 'Export to Excel'}
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button 
+              onClick={exportToExcel} 
+              className="btn btn-success"
+              disabled={exporting}
+              style={{
+                opacity: exporting ? 0.6 : 1,
+                cursor: exporting ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exporting ? 'Exporting...' : 'Export to Excel'}
+            </button>
+            <button 
+              onClick={exportFilteredToExcel} 
+              className="btn btn-primary"
+              disabled={exportingFiltered || orders.length === 0}
+              style={{
+                opacity: (exportingFiltered || orders.length === 0) ? 0.6 : 1,
+                cursor: (exportingFiltered || orders.length === 0) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exportingFiltered ? 'Exporting...' : 'Export to Excel with Filtered'}
+            </button>
+          </div>
         </div>
 
         <div className="card info-card">

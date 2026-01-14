@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { getLocalDateString } from '../utils/dateUtils';
 import TransactionLoader from '../components/TransactionLoader';
+import ActionMenu from '../components/ActionMenu';
 import './Party.css';
 
 const Parties = () => {
@@ -38,7 +39,7 @@ const Parties = () => {
   const [transactionDetails, setTransactionDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
-  // Edit and Archive states
+  // Edit and Delete states
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingParty, setEditingParty] = useState(null);
   const [editFormData, setEditFormData] = useState({
@@ -216,7 +217,7 @@ const Parties = () => {
   };
 
   const handleArchive = async (party) => {
-    if (!window.confirm(`Are you sure you want to archive "${party.party_name}"? This action can be undone by restoring the party.`)) {
+    if (!window.confirm(`Are you sure you want to delete "${party.party_name}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -227,11 +228,11 @@ const Parties = () => {
         : `${config.api.sellers}/${party.id}`;
 
       await apiClient.delete(endpoint);
-      toast.success('Party archived successfully!');
+      toast.success('Party deleted successfully!');
       fetchParties(); // Refresh the list
     } catch (error) {
-      console.error('Error archiving party:', error);
-      toast.error(error.response?.data?.error || 'Failed to archive party');
+      console.error('Error deleting party:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete party');
     } finally {
       setArchiving(false);
     }
@@ -434,19 +435,19 @@ const Parties = () => {
               className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
               onClick={() => { setFilter('all'); setPage(1); }}
             >
-              All Parties ({parties.length})
+              All Parties ({((buyerPagination?.totalRecords || buyerParties.length) + (sellerPagination?.totalRecords || sellerParties.length))})
             </button>
             <button
               className={`filter-tab ${filter === 'buyer' ? 'active' : ''}`}
               onClick={() => { setFilter('buyer'); setPage(1); }}
             >
-              Buyer Parties ({buyerParties.length})
+              Buyer Parties ({buyerPagination?.totalRecords || buyerParties.length})
             </button>
             <button
               className={`filter-tab ${filter === 'seller' ? 'active' : ''}`}
               onClick={() => { setFilter('seller'); setPage(1); }}
             >
-              Seller Parties ({sellerParties.length})
+              Seller Parties ({sellerPagination?.totalRecords || sellerParties.length})
             </button>
           </div>
 
@@ -596,59 +597,35 @@ const Parties = () => {
                         </td>
                         <td>
                           <div className="inline-action-buttons" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                            <button
-                              onClick={() => handleViewDetails(party)}
-                              className="action-icon-btn"
-                              title="View Details"
-                              aria-label="View party details"
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                                <circle cx="12" cy="12" r="3"/>
-                              </svg>
-                            </button>
-                            <button
-                              onClick={() => handleMakePayment(party)}
-                              className="action-icon-btn"
-                              title="Make Payment"
-                              aria-label="Make payment"
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <line x1="12" y1="1" x2="12" y2="23"/>
-                                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                              </svg>
-                            </button>
-                            {(user?.role === 'admin' || user?.role === 'super_admin') && (
-                              <>
-                                <button
-                                  onClick={() => handleEdit(party)}
-                                  className="action-icon-btn"
-                                  title="Edit Party"
-                                  aria-label="Edit party"
-                                >
-                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => handleArchive(party)}
-                                  className="action-icon-btn danger"
-                                  title="Archive Party"
-                                  aria-label="Archive party"
-                                  disabled={archiving}
-                                >
-                                  {archiving ? (
-                                    <div style={{ width: '18px', height: '18px', border: '2px solid currentColor', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></div>
-                                  ) : (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                      <path d="M3 6h18"/>
-                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                    </svg>
-                                  )}
-                                </button>
-                              </>
-                            )}
+                            <ActionMenu
+                              itemId={party.id}
+                              itemName={party.party_name}
+                              disabled={archiving}
+                              actions={[
+                                {
+                                  label: 'View Details',
+                                  icon: '👁️',
+                                  onClick: (id) => handleViewDetails(party)
+                                },
+                                {
+                                  label: 'Make Payment',
+                                  icon: '💰',
+                                  onClick: (id) => handleMakePayment(party)
+                                },
+                                ...(user?.role === 'admin' || user?.role === 'super_admin' ? [{
+                                  label: 'Edit',
+                                  icon: '✏️',
+                                  onClick: (id) => handleEdit(party)
+                                }] : []),
+                                ...(user?.role === 'admin' || user?.role === 'super_admin' ? [{
+                                  label: 'Delete',
+                                  icon: '🗑️',
+                                  danger: true,
+                                  onClick: (id) => handleArchive(party),
+                                  disabled: archiving
+                                }] : [])
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>

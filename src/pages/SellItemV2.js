@@ -4,6 +4,7 @@ import apiClient from '../config/axios';
 import config from '../config/config';
 import LoadingSpinner from '../components/LoadingSpinner';
 import TransactionLoader from '../components/TransactionLoader';
+import ActionMenu from '../components/ActionMenu';
 import { useToast } from '../context/ToastContext';
 import { numberToWords } from '../utils/numberToWords';
 import './SellItemV2.css';
@@ -778,9 +779,18 @@ const SellItemV2 = () => {
                                 {formatMoney(withGst ? it.itemTotalAfterDiscount : it.itemTotalAfterDiscount)}
                               </td>
                               <td>
-                                <button className="sell2-btn danger" type="button" onClick={() => removeCartItem(it.item_id)}>
-                                  Remove
-                                </button>
+                                <ActionMenu
+                                  itemId={it.item_id}
+                                  itemName={it.product_name}
+                                  actions={[
+                                    {
+                                      label: 'Remove',
+                                      icon: '🗑️',
+                                      danger: true,
+                                      onClick: (id) => removeCartItem(id)
+                                    }
+                                  ]}
+                                />
                               </td>
                             </tr>
                           );

@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { getLocalDateString } from '../utils/dateUtils';
+import * as XLSX from 'xlsx';
 import './Report.css';
 
 const ItemWiseSellReport = () => {
@@ -12,6 +13,8 @@ const ItemWiseSellReport = () => {
   const [toDate, setToDate] = useState(new Date());
   const [gstFilter, setGstFilter] = useState('all'); // 'all' | 'with_gst' | 'without_gst'
   const [itemQuery, setItemQuery] = useState('');
+  const [debouncedItemQuery, setDebouncedItemQuery] = useState('');
+  const debounceTimerRef = useRef(null);
 
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -20,6 +23,33 @@ const ItemWiseSellReport = () => {
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
 
+  // Debounce itemQuery for auto-search
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedItemQuery(itemQuery);
+      setPage(1); // Reset to first page when search changes
+    }, 500); // 500ms debounce delay
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [itemQuery]);
+
+  // Validate dates
+  const validateDates = () => {
+    if (fromDate && toDate && fromDate > toDate) {
+      alert('From date cannot be after To date. Please select valid dates.');
+      return false;
+    }
+    return true;
+  };
+
   const params = useMemo(() => {
     const from = getLocalDateString(fromDate);
     const to = getLocalDateString(toDate);
@@ -27,13 +57,16 @@ const ItemWiseSellReport = () => {
       from_date: from,
       to_date: to,
       gst_filter: gstFilter,
-      item_query: itemQuery?.trim() || undefined,
+      item_query: debouncedItemQuery?.trim() || undefined,
       page,
       limit
     };
-  }, [fromDate, toDate, gstFilter, itemQuery, page, limit]);
+  }, [fromDate, toDate, gstFilter, debouncedItemQuery, page, limit]);
 
   const fetchReport = async () => {
+    if (!validateDates()) {
+      return;
+    }
     try {
       setLoading(true);
       const response = await apiClient.get(config.api.itemWiseSalesReport, { params });
@@ -49,18 +82,29 @@ const ItemWiseSellReport = () => {
   };
 
   const exportToExcel = async () => {
+    if (!validateDates()) {
+      return;
+    }
     try {
+      // Export ALL results from API, ignoring pagination and search filters
+      const from = getLocalDateString(fromDate);
+      const to = getLocalDateString(toDate);
+      const exportParams = {
+        from_date: from,
+        to_date: to,
+        gst_filter: gstFilter
+        // Note: Not including item_query or page/limit to export ALL results
+      };
+      
       const response = await apiClient.get(config.api.itemWiseSalesReportExport, {
-        params,
+        params: exportParams,
         responseType: 'blob'
       });
 
-      const from = params.from_date;
-      const to = params.to_date;
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `item_wise_sales_${from}_${to}.xlsx`);
+      link.setAttribute('download', `item_wise_sales_all_${from}_${to}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -71,19 +115,66 @@ const ItemWiseSellReport = () => {
     }
   };
 
+  const exportFilteredToExcel = () => {
+    if (rows.length === 0) return;
+    
+    try {
+      const data = rows.map(r => ({
+        'Product': r.product_name,
+        'Brand': r.brand || '-',
+        'HSN': r.hsn_number || '-',
+        'Tax %': Number(r.tax_rate || 0).toFixed(2),
+        'Qty': Number(r.total_quantity || 0).toFixed(0),
+        'Gross': Number(r.gross_amount || 0).toFixed(2),
+        'Discount': Number(r.discount_amount || 0).toFixed(2),
+        'Taxable/Net': Number(r.taxable_or_net_amount || 0).toFixed(2),
+        'GST': Number(r.gst_amount || 0).toFixed(2),
+        'Net': Number(r.net_amount || 0).toFixed(2),
+        'Bills': r.bills_count
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Item Wise Sales');
+      
+      const from = params.from_date;
+      const to = params.to_date;
+      XLSX.writeFile(wb, `item_wise_sales_filtered_${from}_${to}.xlsx`);
+      alert('Filtered Excel file exported successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export. Please try again.');
+    }
+  };
+
   useEffect(() => {
-    fetchReport();
+    if (validateDates()) {
+      fetchReport();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.from_date, params.to_date, params.gst_filter]);
+  }, [params.from_date, params.to_date, params.gst_filter, params.item_query, params.page, params.limit]);
 
   return (
     <Layout>
       <div className="report">
         <div className="report-header">
           <h2>Item-wise Sell Report</h2>
-          <button onClick={exportToExcel} className="btn btn-success">
-            Export to Excel
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={exportToExcel} className="btn btn-success">
+              Export to Excel
+            </button>
+            <button 
+              onClick={exportFilteredToExcel} 
+              className="btn btn-primary"
+              disabled={rows.length === 0}
+              style={{
+                opacity: rows.length === 0 ? 0.6 : 1,
+                cursor: rows.length === 0 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Export to Excel with Filtered
+            </button>
+          </div>
         </div>
 
         <div className="card">
@@ -128,7 +219,18 @@ const ItemWiseSellReport = () => {
               />
             </div>
 
-            <button onClick={() => { setPage(1); fetchReport(); }} className="btn btn-primary">
+            <button 
+              onClick={() => { 
+                setFromDate(new Date());
+                setToDate(new Date());
+                setGstFilter('all');
+                setItemQuery('');
+                setDebouncedItemQuery('');
+                setPage(1);
+                setLimit(50);
+              }} 
+              className="btn btn-primary"
+            >
               Refresh
             </button>
             <div className="form-group">

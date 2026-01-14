@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ActionMenu from '../components/ActionMenu';
 import * as XLSX from 'xlsx';
 import './Dashboard.css';
 
@@ -14,6 +15,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const toast = useToast();
   const [items, setItems] = useState([]);
+  const [allItems, setAllItems] = useState([]); // Store all items from backend for client-side filtering
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(200);
@@ -37,6 +39,7 @@ const Dashboard = () => {
   const [totalStockAmount, setTotalStockAmount] = useState(null);
   const [showStockAmountModal, setShowStockAmountModal] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingFiltered, setExportingFiltered] = useState(false);
   const [quickSaleLoading, setQuickSaleLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -46,21 +49,58 @@ const Dashboard = () => {
   const [originalItemData, setOriginalItemData] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
 
+  // Fetch items only on mount (not when page/limit changes - those are handled client-side)
   useEffect(() => {
     fetchItems();
-  }, [page, limit, search, searchField]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only fetch once on mount
 
+  // Client-side filtering for quick search
+  useEffect(() => {
+    if (allItems.length === 0) return; // Wait for items to be loaded
+    
+    if (!search || search.trim() === '') {
+      // If no search query, show paginated items from allItems
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      setItems(allItems.slice(startIndex, endIndex));
+      setTotalPages(Math.ceil(allItems.length / limit));
+    } else {
+      // Filter items client-side based on search query
+      const query = search.toLowerCase().trim();
+      const filtered = allItems.filter(item => {
+        const fieldValue = String(item[searchField] || '').toLowerCase();
+        return fieldValue.includes(query);
+      });
+      
+      // Reset to page 1 when search changes
+      if (page !== 1) {
+        setPage(1);
+        return; // Will re-run after page is set to 1
+      }
+      
+      // Apply pagination to filtered results
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      setItems(filtered.slice(startIndex, endIndex));
+      setTotalPages(Math.ceil(filtered.length / limit));
+    }
+  }, [search, searchField, allItems, page, limit]);
 
   const fetchItems = async () => {
     try {
       setLoading(true);
+      // Fetch items without search params for client-side filtering
+      // Use a large limit to get all items, or fetch in batches if needed
       const response = await apiClient.get(config.api.items, {
-        params: { page, limit, search, searchField }
+        params: { page: 1, limit: 10000 } // Fetch all items for client-side filtering
       });
-      setItems(response.data.items);
-      setTotalPages(response.data.pagination.totalPages);
+      const fetchedItems = response.data.items || [];
+      setAllItems(fetchedItems);
+      // The useEffect for filtering will handle setting items and pagination
     } catch (error) {
       console.error('Error fetching items:', error);
+      toast.error('Error loading items');
     } finally {
       setLoading(false);
     }
@@ -73,8 +113,9 @@ const Dashboard = () => {
       setSearching(true);
       setLoading(true);
       const response = await apiClient.post(config.api.itemsAdvancedSearch, advancedSearch);
-      setItems(response.data.items);
+      setItems(response.data.items || []);
       setTotalPages(1);
+      // Don't update allItems for advanced search - it's a separate search result
     } catch (error) {
       console.error('Error in advanced search:', error);
       toast.error('Search failed. Please try again.');
@@ -102,10 +143,41 @@ const Dashboard = () => {
     }
   }, [user]);
 
-  const exportToExcel = () => {
-    if (exporting || items.length === 0) return;
+  const exportToExcel = async () => {
+    if (exporting || allItems.length === 0) return;
     
     setExporting(true);
+    try {
+      // Export ALL items from backend (allItems), not just visible/filtered items
+      const data = allItems.map(item => ({
+        'Product Name': item.product_name,
+        'Brand': item.brand,
+        'HSN Number': item.hsn_number,
+        'Tax Rate': item.tax_rate,
+        'Sale Rate': item.sale_rate,
+        'Purchase Rate': user?.role === 'super_admin' ? item.purchase_rate : 'N/A',
+        'Quantity': item.quantity,
+        'Rack Number': item.rack_number,
+        'Remarks': item.remarks || ''
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Stock Items');
+      XLSX.writeFile(wb, 'stock_items_all.xlsx');
+      toast.success('All items exported to Excel successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportFilteredToExcel = () => {
+    if (exportingFiltered || items.length === 0) return;
+    
+    setExportingFiltered(true);
     try {
       const data = items.map(item => ({
         'Product Name': item.product_name,
@@ -122,13 +194,13 @@ const Dashboard = () => {
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Stock Items');
-      XLSX.writeFile(wb, 'stock_items.xlsx');
-      toast.success('Excel file exported successfully!');
+      XLSX.writeFile(wb, 'stock_items_filtered.xlsx');
+      toast.success('Filtered Excel file exported successfully!');
     } catch (error) {
       console.error('Export error:', error);
       toast.error('Failed to export. Please try again.');
     } finally {
-      setExporting(false);
+      setExportingFiltered(false);
     }
   };
 
@@ -456,9 +528,20 @@ const Dashboard = () => {
             <button 
               onClick={exportToExcel} 
               className="btn btn-success"
-              disabled={exporting || items.length === 0}
+              disabled={exporting || allItems.length === 0}
             >
               {exporting ? 'Exporting...' : 'Export to Excel'}
+            </button>
+            <button 
+              onClick={exportFilteredToExcel} 
+              className="btn btn-primary"
+              disabled={exportingFiltered || items.length === 0}
+              style={{
+                opacity: (exportingFiltered || items.length === 0) ? 0.6 : 1,
+                cursor: (exportingFiltered || items.length === 0) ? 'not-allowed' : 'pointer'
+              }}
+            >
+              {exportingFiltered ? 'Exporting...' : 'Export to Excel with Filtered'}
             </button>
           </div>
         </div>
@@ -520,7 +603,8 @@ const Dashboard = () => {
               <button
                 onClick={() => {
                   setAdvancedSearch({ product_name: '', brand: '', remarks: '' });
-                  fetchItems();
+                  setSearch(''); // Clear quick search too
+                  fetchItems(); // Reload all items from backend
                 }}
                 className="btn btn-secondary"
                 disabled={searching || loading}
@@ -546,6 +630,7 @@ const Dashboard = () => {
                 <option value="200">200 (Default)</option>
                 <option value="500">500</option>
                 <option value="2000">2000</option>
+                 <option value="10">10</option>
                 <option value="all">All</option>
               </select>
             </label>
@@ -587,78 +672,49 @@ const Dashboard = () => {
                         <td>{item.hsn_number}</td>
                         <td>{item.tax_rate}%</td>
                         <td>₹{item.sale_rate}</td>
-                        <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <td 
+                          style={{ 
+                            maxWidth: '200px', 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis', 
+                            whiteSpace: 'nowrap',
+                            cursor: item.remarks ? 'help' : 'default'
+                          }}
+                          title={item.remarks || undefined}
+                        >
                           {item.remarks || '-'}
                         </td>
                         <td>{item.quantity}</td>
                         <td>{item.rack_number}</td>
                         <td>
-                          <div className="inline-action-buttons">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleView(item);
-                              }}
-                              disabled={modalLoading || updating || deleting || quickSaleLoading}
-                              className="action-icon-btn"
-                              title="View"
-                              aria-label="View item"
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                                <circle cx="12" cy="12" r="3"/>
-                              </svg>
-                            </button>
-                            {canEdit && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEdit(item);
-                                }}
-                                disabled={modalLoading || updating || deleting || quickSaleLoading}
-                                className="action-icon-btn"
-                                title="Edit"
-                                aria-label="Edit item"
-                              >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
-                              </button>
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleQuickSale(item);
-                              }}
-                              disabled={modalLoading || updating || deleting || quickSaleLoading}
-                              className="action-icon-btn"
-                              title="Quick Sale"
-                              aria-label="Quick sale"
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M9 11l3 3L22 4"/>
-                                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                              </svg>
-                            </button>
-                            {canDelete && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(item.id, item.product_name);
-                                }}
-                                disabled={modalLoading || updating || deleting || quickSaleLoading}
-                                className="action-icon-btn danger"
-                                title="Delete"
-                                aria-label="Delete item"
-                              >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <polyline points="3 6 5 6 21 6"/>
-                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                                </svg>
-                              </button>
-                            )}
-                          </div>
+                          <ActionMenu
+                            itemId={item.id}
+                            itemName={item.product_name}
+                            disabled={modalLoading || updating || deleting || quickSaleLoading}
+                            actions={[
+                              {
+                                label: 'View',
+                                icon: '👁️',
+                                onClick: (id) => handleView(item)
+                              },
+                              ...(canEdit ? [{
+                                label: 'Edit',
+                                icon: '✏️',
+                                onClick: (id) => handleEdit(item)
+                              }] : []),
+                              {
+                                label: 'Quick Sale',
+                                icon: '⚡',
+                                onClick: (id) => handleQuickSale(item)
+                              },
+                              ...(canDelete ? [{
+                                label: 'Delete',
+                                icon: '🗑️',
+                                danger: true,
+                                onClick: (id, name) => handleDelete(id, name)
+                              }] : [])
+                            ]}
+                          />
                         </td>
                       </tr>
                     ))
@@ -1177,11 +1233,23 @@ const Dashboard = () => {
                       <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                     </svg>
                   </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>{viewItem.product_name}</h3>
-                    <p style={{ margin: '5px 0 0 0', fontSize: '14px', opacity: 0.9 }}>
-                      {viewItem.product_code || 'No Product Code'}
-                    </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                      <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
+                        <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.8)', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '5px' }}>
+                          Name
+                        </div>
+                        <h3 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>{viewItem.product_name}</h3>
+                      </div>
+                      <div style={{ flex: '1 1 200px', minWidth: '200px' }}>
+                        <div style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.8)', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '5px' }}>
+                          Product Code
+                        </div>
+                        <p style={{ margin: 0, fontSize: '18px', fontWeight: '500', opacity: 0.9 }}>
+                          {viewItem.product_code || 'No Product Code'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <button className="modal-close" onClick={() => {
@@ -1190,29 +1258,6 @@ const Dashboard = () => {
                 }} style={{ color: 'white' }}>×</button>
               </div>
               <div className="modal-body" style={{ padding: '30px', background: '#f8f9fa' }}>
-                {/* Image Section */}
-                {viewItem.image_base64 && (
-                  <div style={{
-                    marginBottom: '30px',
-                    textAlign: 'center',
-                    background: 'white',
-                    borderRadius: '12px',
-                    padding: '20px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-                  }}>
-                    <img 
-                      src={`data:image/jpeg;base64,${viewItem.image_base64}`} 
-                      alt={viewItem.product_name}
-                      style={{ 
-                        maxWidth: '100%', 
-                        maxHeight: '400px', 
-                        borderRadius: '8px',
-                        objectFit: 'contain'
-                      }}
-                    />
-                  </div>
-                )}
-
                 {/* Stock Status Card */}
                 <div style={{
                   background: 'white',
@@ -1406,6 +1451,40 @@ const Dashboard = () => {
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Image Section - At Bottom */}
+                {viewItem.image_base64 && (
+                  <div style={{
+                    marginTop: '30px',
+                    textAlign: 'center',
+                    background: 'white',
+                    borderRadius: '12px',
+                    padding: '20px',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                  }}>
+                    <h4 style={{ 
+                      margin: '0 0 20px 0', 
+                      fontSize: '18px', 
+                      fontWeight: '600', 
+                      color: '#333',
+                      paddingBottom: '15px',
+                      borderBottom: '2px solid #f0f0f0',
+                      textAlign: 'left'
+                    }}>
+                      Product Image
+                    </h4>
+                    <img 
+                      src={`data:image/jpeg;base64,${viewItem.image_base64}`} 
+                      alt={viewItem.product_name}
+                      style={{ 
+                        maxWidth: '100%', 
+                        maxHeight: '400px', 
+                        borderRadius: '8px',
+                        objectFit: 'contain'
+                      }}
+                    />
                   </div>
                 )}
               </div>
