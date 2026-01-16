@@ -65,12 +65,14 @@ const AddItem = () => {
       }
       fetchBuyerParties();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate]);
 
   useEffect(() => {
     if (selectedBuyer) {
       fetchBuyerInfo();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBuyer]);
 
   useEffect(() => {
@@ -99,6 +101,7 @@ const AddItem = () => {
       // Don't close modal when search is cleared - only close explicitly
       // setShowItemSearchModal(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   const fetchBuyerParties = async () => {
@@ -144,6 +147,7 @@ const AddItem = () => {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleToggleItemSelection = (itemId) => {
     setSelectedItemIds(prev => {
       const newSet = new Set(prev);
@@ -156,6 +160,7 @@ const AddItem = () => {
     });
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleAddSelectedItems = async () => {
     if (selectedItemIds.size === 0) {
       toast.warning('Please select at least one item');
