@@ -61,6 +61,7 @@ const ReturnItem = () => {
       // Clear suggestions when search is cleared
       setSuggestedItems([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
   useEffect(() => {
@@ -512,8 +513,6 @@ const ReturnItem = () => {
       // Generate and download return bill PDF if return_transaction_id is available
       if (response.data.return_transaction_id && response.data.bill_number) {
         try {
-          const pdfUrl = `${config.api.baseUrl}/api/bills/return/${response.data.return_transaction_id}/pdf?party_type=${partyType}`;
-          
           const pdfResponse = await apiClient.get(
             `/api/bills/return/${response.data.return_transaction_id}/pdf?party_type=${partyType}`,
             { responseType: 'blob' }

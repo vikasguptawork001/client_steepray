@@ -4,7 +4,6 @@ import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import { useToast } from '../context/ToastContext';
-import LoadingSpinner from '../components/LoadingSpinner';
 import TransactionLoader from '../components/TransactionLoader';
 import ItemSearchModal from '../components/ItemSearchModal';
 import ActionMenu from '../components/ActionMenu';
@@ -62,8 +61,6 @@ const SellItem = () => {
     paymentStatus,
     paidAmount,
     withGst,
-    previousBalancePaid,
-    payPreviousBalance,
     printDisabled,
     printClicked,
     loading,
@@ -580,7 +577,6 @@ const SellItem = () => {
   // Local state for button actions to prevent double-clicks and race conditions
   const [actionInProgress, setActionInProgress] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState(new Set());
-  const [showScrollToTop, setShowScrollToTop] = useState(false);
   const [showItemSearchModal, setShowItemSearchModal] = useState(false);
   const billPreviewRef = useRef(null);
 
@@ -600,20 +596,12 @@ const SellItem = () => {
   // Scroll-to-top functionality disabled - bill preview is no longer scrollable
   // The preview will show completely without internal scrolling
 
-  const handleScrollToTop = () => {
-    if (billPreviewRef.current) {
-      billPreviewRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
   const handleCopyBillNumber = () => {
     if (previewData?.billNumber) {
       navigator.clipboard.writeText(previewData.billNumber);
       toast.success(`Bill number ${previewData.billNumber} copied to clipboard!`);
     }
   };
-
-  const isBulkSelecting = selectedItemIds.size > 0;
 
   const handleBackToEditClick = async () => {
     if (actionInProgress) return;
@@ -1410,6 +1398,11 @@ const SellItem = () => {
                             dispatch(setPaidAmount(finalAmount));
                           }}
                           onBlur={async (e) => {
+                            // Reset visual styling
+                            e.target.style.borderColor = '#ced4da';
+                            e.target.style.boxShadow = 'none';
+                            
+                            // Handle business logic
                             if (actionInProgress) return;
                             setActionInProgress(true);
                             try {
@@ -1454,10 +1447,6 @@ const SellItem = () => {
                           onFocus={(e) => {
                             e.target.style.borderColor = '#007bff';
                             e.target.style.boxShadow = '0 0 0 0.2rem rgba(0, 123, 255, 0.25)';
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.borderColor = '#ced4da';
-                            e.target.style.boxShadow = 'none';
                           }}
                         />
                       </div>
