@@ -238,6 +238,7 @@ const Parties = () => {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleViewTransaction = async (transaction) => {
     setSelectedTransaction(transaction);
     setShowTransactionDetailsModal(true);

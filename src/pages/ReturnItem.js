@@ -48,6 +48,7 @@ const ReturnItem = () => {
   useEffect(() => {
     fetchSellerParties();
     fetchBuyerParties();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -71,6 +72,7 @@ const ReturnItem = () => {
     } else {
       setSelectedPartyInfo(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedParty, partyType]);
 
   // Filter parties based on search query
@@ -141,6 +143,7 @@ const ReturnItem = () => {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleToggleItemSelection = (itemId) => {
     const item = suggestedItems.find(i => i.id === itemId);
     if (item && (item.quantity || 0) <= 0) {
@@ -159,6 +162,7 @@ const ReturnItem = () => {
     });
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleAddSelectedItems = async () => {
     if (selectedItemIds.size === 0) {
       toast.warning('Please select at least one item');

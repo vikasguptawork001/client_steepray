@@ -3,16 +3,13 @@ import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext';
-import LoadingSpinner from '../components/LoadingSpinner';
 import ActionMenu from '../components/ActionMenu';
 import * as XLSX from 'xlsx';
 import './Dashboard.css';
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const toast = useToast();
   const [items, setItems] = useState([]);
   const [allItems, setAllItems] = useState([]); // Store all items from backend for client-side filtering
