@@ -39,7 +39,6 @@ const Dashboard = () => {
   const [totalStockAmount, setTotalStockAmount] = useState(null);
   const [showStockAmountModal, setShowStockAmountModal] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [exportingFiltered, setExportingFiltered] = useState(false);
   const [quickSaleLoading, setQuickSaleLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -143,42 +142,12 @@ const Dashboard = () => {
     }
   }, [user]);
 
-  const exportToExcel = async () => {
-    if (exporting || allItems.length === 0) return;
+  const exportToExcel = () => {
+    if (exporting || items.length === 0) return;
     
     setExporting(true);
     try {
-      // Export ALL items from backend (allItems), not just visible/filtered items
-      const data = allItems.map(item => ({
-        'Product Name': item.product_name,
-        'Brand': item.brand,
-        'HSN Number': item.hsn_number,
-        'Tax Rate': item.tax_rate,
-        'Sale Rate': item.sale_rate,
-        'Purchase Rate': user?.role === 'super_admin' ? item.purchase_rate : 'N/A',
-        'Quantity': item.quantity,
-        'Rack Number': item.rack_number,
-        'Remarks': item.remarks || ''
-      }));
-
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Stock Items');
-      XLSX.writeFile(wb, 'stock_items_all.xlsx');
-      toast.success('All items exported to Excel successfully!');
-    } catch (error) {
-      console.error('Export error:', error);
-      toast.error('Failed to export. Please try again.');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const exportFilteredToExcel = () => {
-    if (exportingFiltered || items.length === 0) return;
-    
-    setExportingFiltered(true);
-    try {
+      // Export only the data currently showing on screen (visible/filtered data)
       const data = items.map(item => ({
         'Product Name': item.product_name,
         'Brand': item.brand,
@@ -192,15 +161,50 @@ const Dashboard = () => {
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
+      
+      // Calculate column widths based on content
+      const colWidths = [];
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell && cell.v) {
+            const cellValue = String(cell.v);
+            const cellLength = cellValue.length;
+            if (cellLength > maxWidth) {
+              maxWidth = cellLength;
+            }
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws['!cols'] = colWidths;
+      
+      // Apply text wrapping and auto row height to all cells
+      if (!ws['!rows']) ws['!rows'] = [];
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        if (!ws['!rows'][R]) ws['!rows'][R] = {};
+        ws['!rows'][R].hpt = undefined; // Auto height
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+          if (!ws[cellAddress].s) ws[cellAddress].s = {};
+          ws[cellAddress].s.wrapText = true;
+          ws[cellAddress].s.alignment = { wrapText: true, vertical: 'top' };
+        }
+      }
+      
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Stock Items');
-      XLSX.writeFile(wb, 'stock_items_filtered.xlsx');
-      toast.success('Filtered Excel file exported successfully!');
+      XLSX.writeFile(wb, 'stock_items.xlsx');
+      toast.success('Excel file exported successfully!');
     } catch (error) {
       console.error('Export error:', error);
       toast.error('Failed to export. Please try again.');
     } finally {
-      setExportingFiltered(false);
+      setExporting(false);
     }
   };
 
@@ -528,20 +532,9 @@ const Dashboard = () => {
             <button 
               onClick={exportToExcel} 
               className="btn btn-success"
-              disabled={exporting || allItems.length === 0}
+              disabled={exporting || items.length === 0}
             >
               {exporting ? 'Exporting...' : 'Export to Excel'}
-            </button>
-            <button 
-              onClick={exportFilteredToExcel} 
-              className="btn btn-primary"
-              disabled={exportingFiltered || items.length === 0}
-              style={{
-                opacity: (exportingFiltered || items.length === 0) ? 0.6 : 1,
-                cursor: (exportingFiltered || items.length === 0) ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {exportingFiltered ? 'Exporting...' : 'Export to Excel with Filtered'}
             </button>
           </div>
         </div>

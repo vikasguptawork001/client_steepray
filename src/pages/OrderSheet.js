@@ -13,7 +13,6 @@ const OrderSheet = () => {
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
   const [exporting, setExporting] = useState(false);
-  const [exportingFiltered, setExportingFiltered] = useState(false);
 
   useEffect(() => {
     fetchOrders();
@@ -35,34 +34,12 @@ const OrderSheet = () => {
     }
   };
 
-  const exportToExcel = async () => {
-    if (exporting) return;
+  const exportToExcel = () => {
+    if (exporting || orders.length === 0) return;
+    
     setExporting(true);
     try {
-      const response = await apiClient.get(config.api.ordersExport, {
-        responseType: 'blob'
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `order_sheet_${getLocalDateString()}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (error) {
-      console.error('Error exporting order sheet:', error);
-      alert('Error exporting order sheet');
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const exportFilteredToExcel = () => {
-    if (exportingFiltered || orders.length === 0) return;
-    
-    setExportingFiltered(true);
-    try {
+      // Export only the data currently showing on screen (visible/filtered data)
       const data = orders.map((order, index) => ({
         'S.No': index + 1,
         'Product Name': order.product_name,
@@ -72,16 +49,51 @@ const OrderSheet = () => {
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
+      
+      // Calculate column widths based on content
+      const colWidths = [];
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell && cell.v) {
+            const cellValue = String(cell.v);
+            const cellLength = cellValue.length;
+            if (cellLength > maxWidth) {
+              maxWidth = cellLength;
+            }
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws['!cols'] = colWidths;
+      
+      // Apply text wrapping and auto row height to all cells
+      if (!ws['!rows']) ws['!rows'] = [];
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        if (!ws['!rows'][R]) ws['!rows'][R] = {};
+        ws['!rows'][R].hpt = undefined; // Auto height
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+          if (!ws[cellAddress].s) ws[cellAddress].s = {};
+          ws[cellAddress].s.wrapText = true;
+          ws[cellAddress].s.alignment = { wrapText: true, vertical: 'top' };
+        }
+      }
+      
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Order Sheet');
       
-      XLSX.writeFile(wb, `order_sheet_filtered_${getLocalDateString()}.xlsx`);
-      alert('Filtered Excel file exported successfully!');
+      XLSX.writeFile(wb, `order_sheet_${getLocalDateString()}.xlsx`);
+      alert('Excel file exported successfully!');
     } catch (error) {
       console.error('Export error:', error);
       alert('Failed to export. Please try again.');
     } finally {
-      setExportingFiltered(false);
+      setExporting(false);
     }
   };
 
@@ -91,30 +103,17 @@ const OrderSheet = () => {
       <div className="order-sheet">
         <div className="order-header">
           <h2>Order Sheet</h2>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button 
-              onClick={exportToExcel} 
-              className="btn btn-success"
-              disabled={exporting}
-              style={{
-                opacity: exporting ? 0.6 : 1,
-                cursor: exporting ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {exporting ? 'Exporting...' : 'Export to Excel'}
-            </button>
-            <button 
-              onClick={exportFilteredToExcel} 
-              className="btn btn-primary"
-              disabled={exportingFiltered || orders.length === 0}
-              style={{
-                opacity: (exportingFiltered || orders.length === 0) ? 0.6 : 1,
-                cursor: (exportingFiltered || orders.length === 0) ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {exportingFiltered ? 'Exporting...' : 'Export to Excel with Filtered'}
-            </button>
-          </div>
+          <button 
+            onClick={exportToExcel} 
+            className="btn btn-success"
+            disabled={exporting || orders.length === 0}
+            style={{
+              opacity: (exporting || orders.length === 0) ? 0.6 : 1,
+              cursor: (exporting || orders.length === 0) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {exporting ? 'Exporting...' : 'Export to Excel'}
+          </button>
         </div>
 
         <div className="card info-card">

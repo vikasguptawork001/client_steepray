@@ -7,6 +7,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { getLocalDateString } from '../utils/dateUtils';
 import * as XLSX from 'xlsx';
+import ActionMenu from '../components/ActionMenu';
 import './Report.css';
 
 const SellReport = () => {
@@ -21,7 +22,9 @@ const SellReport = () => {
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
   const [exporting, setExporting] = useState(false);
-  const [exportingFiltered, setExportingFiltered] = useState(false);
+  const [showBillDetailsModal, setShowBillDetailsModal] = useState(false);
+  const [billDetails, setBillDetails] = useState(null);
+  const [loadingBillDetails, setLoadingBillDetails] = useState(false);
 
   // Validate dates
   const validateDates = () => {
@@ -60,66 +63,85 @@ const SellReport = () => {
     }
   };
 
-  const exportToExcel = async () => {
-    if (exporting) return;
-    if (!validateDates()) {
-      return;
-    }
-    setExporting(true);
+  const fetchBillDetails = async (billNumber) => {
     try {
-      const from = getLocalDateString(fromDate);
-      const to = getLocalDateString(toDate);
-      // Export ALL results from API, ignoring GST filter and pagination
-      // Only date range is applied as that's a required filter
-      const response = await apiClient.get(config.api.salesReportExport, {
-        params: { from_date: from, to_date: to },
-        responseType: 'blob'
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `sales_report_all_${from}_${to}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      setLoadingBillDetails(true);
+      const response = await apiClient.get(config.api.salesBillDetails(billNumber));
+      setBillDetails(response.data);
+      setShowBillDetailsModal(true);
     } catch (error) {
-      console.error('Error exporting report:', error);
-      alert('Error exporting report');
+      console.error('Error fetching bill details:', error);
+      alert('Error fetching bill details. Please try again.');
     } finally {
-      setExporting(false);
+      setLoadingBillDetails(false);
     }
   };
 
-  const exportFilteredToExcel = () => {
-    if (exportingFiltered || transactions.length === 0) return;
+  const exportToExcel = () => {
+    if (exporting || transactions.length === 0) return;
     
-    setExportingFiltered(true);
+    setExporting(true);
     try {
+      // Export only the data currently showing on screen (visible/filtered data)
       const data = transactions.map(txn => ({
         'Date': new Date(txn.created_at).toLocaleString(),
         'Bill Number': txn.bill_number,
         'Party Name': txn.party_name,
-        'Total Amount': parseFloat(txn.total_amount).toFixed(2),
-        'Paid Amount': parseFloat(txn.paid_amount).toFixed(2),
-        'Balance Amount': parseFloat(txn.balance_amount).toFixed(2),
+        'Total Amount': Math.round(parseFloat(txn.total_amount || 0) * 100) / 100,
+        'Paid Amount': Math.round(parseFloat(txn.paid_amount || 0) * 100) / 100,
+        'Balance Amount': Math.round(parseFloat(txn.balance_amount || 0) * 100) / 100,
         'Payment Status': txn.payment_status.replace('_', ' ').toUpperCase(),
         'GST': txn.with_gst ? 'GST' : 'Non-GST'
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
+      
+      // Calculate column widths based on content
+      const colWidths = [];
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell && cell.v) {
+            const cellValue = String(cell.v);
+            const cellLength = cellValue.length;
+            if (cellLength > maxWidth) {
+              maxWidth = cellLength;
+            }
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws['!cols'] = colWidths;
+      
+      // Apply text wrapping and auto row height to all cells
+      if (!ws['!rows']) ws['!rows'] = [];
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        if (!ws['!rows'][R]) ws['!rows'][R] = {};
+        ws['!rows'][R].hpt = undefined; // Auto height
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+          if (!ws[cellAddress].s) ws[cellAddress].s = {};
+          ws[cellAddress].s.wrapText = true;
+          ws[cellAddress].s.alignment = { wrapText: true, vertical: 'top' };
+        }
+      }
+      
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Sales Report');
       
       const from = getLocalDateString(fromDate);
       const to = getLocalDateString(toDate);
-      XLSX.writeFile(wb, `sales_report_filtered_${from}_${to}.xlsx`);
-      alert('Filtered Excel file exported successfully!');
+      XLSX.writeFile(wb, `sales_report_${from}_${to}.xlsx`);
+      alert('Excel file exported successfully!');
     } catch (error) {
       console.error('Export error:', error);
       alert('Failed to export. Please try again.');
     } finally {
-      setExportingFiltered(false);
+      setExporting(false);
     }
   };
 
@@ -128,30 +150,17 @@ const SellReport = () => {
       <div className="report">
         <div className="report-header">
           <h2>Sell Report</h2>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button 
-              onClick={exportToExcel} 
-              className="btn btn-success"
-              disabled={exporting}
-              style={{
-                opacity: exporting ? 0.6 : 1,
-                cursor: exporting ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {exporting ? 'Exporting...' : 'Export to Excel'}
-            </button>
-            <button 
-              onClick={exportFilteredToExcel} 
-              className="btn btn-primary"
-              disabled={exportingFiltered || transactions.length === 0}
-              style={{
-                opacity: (exportingFiltered || transactions.length === 0) ? 0.6 : 1,
-                cursor: (exportingFiltered || transactions.length === 0) ? 'not-allowed' : 'pointer'
-              }}
-            >
-              {exportingFiltered ? 'Exporting...' : 'Export to Excel with Filtered'}
-            </button>
-          </div>
+          <button 
+            onClick={exportToExcel} 
+            className="btn btn-success"
+            disabled={exporting || transactions.length === 0}
+            style={{
+              opacity: (exporting || transactions.length === 0) ? 0.6 : 1,
+              cursor: (exporting || transactions.length === 0) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {exporting ? 'Exporting...' : 'Export to Excel'}
+          </button>
         </div>
 
         <div className="card">
@@ -285,12 +294,13 @@ const SellReport = () => {
                   <th>Balance Amount</th>
                   <th>Payment Status</th>
                   <th>GST</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.length === 0 ? (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center' }}>No transactions found</td>
+                    <td colSpan="9" style={{ textAlign: 'center' }}>No transactions found</td>
                   </tr>
                 ) : (
                   transactions.map((txn) => (
@@ -310,6 +320,19 @@ const SellReport = () => {
                         <span className={`status-badge ${txn.with_gst ? 'with-gst' : 'without-gst'}`}>
                           {txn.with_gst ? 'GST' : 'Non-GST'}
                         </span>
+                      </td>
+                      <td>
+                        <ActionMenu
+                          actions={[
+                            {
+                              label: 'View',
+                              icon: '👁️',
+                              onClick: () => fetchBillDetails(txn.bill_number)
+                            }
+                          ]}
+                          itemId={txn.id}
+                          itemName={txn.bill_number}
+                        />
                       </td>
                     </tr>
                   ))
@@ -337,6 +360,194 @@ const SellReport = () => {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Bill Details Modal */}
+        {showBillDetailsModal && billDetails && (
+          <div className="modal-overlay" onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              e.stopPropagation();
+            }
+          }}>
+            <div className="modal-content" style={{ maxWidth: '1000px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Bill Details - {billDetails.bill_number}</h3>
+                <button className="btn-close" onClick={() => {
+                  setShowBillDetailsModal(false);
+                  setBillDetails(null);
+                }}>×</button>
+              </div>
+              <div className="modal-body">
+                {loadingBillDetails ? (
+                  <div style={{ textAlign: 'center', padding: '40px' }}>Loading...</div>
+                ) : (
+                  <>
+                    {/* Bill Information */}
+                    <div style={{ marginBottom: '30px' }}>
+                      <h4 style={{ marginBottom: '15px', color: '#333', borderBottom: '2px solid #3498db', paddingBottom: '10px' }}>
+                        Bill Information
+                      </h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                        <div>
+                          <strong>Bill Number:</strong> {billDetails.bill_number}
+                        </div>
+                        <div>
+                          <strong>Transaction ID:</strong> {billDetails.transaction_id}
+                        </div>
+                        <div>
+                          <strong>Transaction Date:</strong> {new Date(billDetails.transaction_date).toLocaleDateString()}
+                        </div>
+                        <div>
+                          <strong>Created At:</strong> {new Date(billDetails.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Party Information */}
+                    {billDetails.party && (
+                      <div style={{ marginBottom: '30px' }}>
+                        <h4 style={{ marginBottom: '15px', color: '#333', borderBottom: '2px solid #3498db', paddingBottom: '10px' }}>
+                          Party Information
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
+                          <div>
+                            <strong>Party Name:</strong> {billDetails.party.party_name}
+                          </div>
+                          <div>
+                            <strong>Mobile Number:</strong> {billDetails.party.mobile_number || '-'}
+                          </div>
+                          <div>
+                            <strong>Email:</strong> {billDetails.party.email || '-'}
+                          </div>
+                          <div>
+                            <strong>Address:</strong> {billDetails.party.address || '-'}
+                          </div>
+                          <div>
+                            <strong>GST Number:</strong> {billDetails.party.gst_number || '-'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Items Table */}
+                    {billDetails.items && billDetails.items.length > 0 && (
+                      <div style={{ marginBottom: '30px' }}>
+                        <h4 style={{ marginBottom: '15px', color: '#333', borderBottom: '2px solid #3498db', paddingBottom: '10px' }}>
+                          Items ({billDetails.items.length})
+                        </h4>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table className="table" style={{ width: '100%', fontSize: '14px' }}>
+                            <thead>
+                              <tr>
+                                <th>S.No</th>
+                                <th>Product Name</th>
+                                <th>Product Code</th>
+                                <th>Brand</th>
+                                <th>HSN</th>
+                                <th>Tax Rate</th>
+                                <th>Qty</th>
+                                <th>Sale Rate</th>
+                                <th>Discount</th>
+                                <th>Gross</th>
+                                <th>Total</th>
+                                <th>GST</th>
+                                <th>Net</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {billDetails.items.map((item, index) => (
+                                <tr key={item.item_id}>
+                                  <td>{index + 1}</td>
+                                  <td>{item.product_name}</td>
+                                  <td>{item.product_code || '-'}</td>
+                                  <td>{item.brand || '-'}</td>
+                                  <td>{item.hsn_number || '-'}</td>
+                                  <td>{item.tax_rate}%</td>
+                                  <td>{item.quantity}</td>
+                                  <td>₹{Math.round(parseFloat(item.sale_rate || 0) * 100) / 100}</td>
+                                  <td>
+                                    {item.discount_type === 'percentage' 
+                                      ? `${item.discount_percentage}% (₹${Math.round(parseFloat(item.discount_amount || 0) * 100) / 100})`
+                                      : `₹${Math.round(parseFloat(item.discount || 0) * 100) / 100}`
+                                    }
+                                  </td>
+                                  <td>₹{Math.round(parseFloat(item.gross_amount || 0) * 100) / 100}</td>
+                                  <td>₹{Math.round(parseFloat(item.total_amount || 0) * 100) / 100}</td>
+                                  <td>₹{Math.round(parseFloat(item.gst_amount || 0) * 100) / 100}</td>
+                                  <td>₹{Math.round(parseFloat(item.net_amount || 0) * 100) / 100}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Summary */}
+                    {billDetails.summary && (
+                      <div style={{ marginBottom: '20px' }}>
+                        <h4 style={{ marginBottom: '15px', color: '#333', borderBottom: '2px solid #3498db', paddingBottom: '10px' }}>
+                          Summary
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', background: '#f8f9fa', padding: '20px', borderRadius: '8px' }}>
+                          <div>
+                            <strong>Subtotal:</strong> ₹{Math.round(parseFloat(billDetails.summary.subtotal || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Discount:</strong> ₹{Math.round(parseFloat(billDetails.summary.discount || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Tax Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.tax_amount || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Total Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_amount || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Paid Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.paid_amount || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Balance Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.balance_amount || 0) * 100) / 100}
+                          </div>
+                          {billDetails.summary.previous_balance_paid !== undefined && (
+                            <div>
+                              <strong>Previous Balance Paid:</strong> ₹{Math.round(parseFloat(billDetails.summary.previous_balance_paid || 0) * 100) / 100}
+                            </div>
+                          )}
+                          <div>
+                            <strong>Payment Status:</strong> 
+                            <span className={`status-badge ${billDetails.summary.payment_status}`} style={{ marginLeft: '10px' }}>
+                              {billDetails.summary.payment_status.replace('_', ' ').toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <strong>With GST:</strong> {billDetails.summary.with_gst ? 'Yes' : 'No'}
+                          </div>
+                          <div>
+                            <strong>Total Items:</strong> {billDetails.summary.total_items}
+                          </div>
+                          <div>
+                            <strong>Total Quantity:</strong> {billDetails.summary.total_quantity}
+                          </div>
+                          <div>
+                            <strong>Total Gross:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_gross || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Total Taxable/Net:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_taxable_or_net || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Total GST:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_gst || 0) * 100) / 100}
+                          </div>
+                          <div>
+                            <strong>Total Net:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_net || 0) * 100) / 100}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

@@ -1046,22 +1046,7 @@ const Parties = () => {
                   </div>
                 </div>
               )}
-              <div className="form-group">
-                <label>Payment Method</label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  style={{ width: '100%', padding: '12px', fontSize: '16px' }}
-                >
-                  <option value="Cash">Cash</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="Cheque">Cheque</option>
-                  <option value="UPI">UPI</option>
-                  <option value="Credit Card">Credit Card</option>
-                  <option value="Debit Card">Debit Card</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
+              {/* Payment Method field hidden - defaulting to 'Cash' */}
               <div className="form-group">
                 <label>Notes (Optional)</label>
                 <textarea

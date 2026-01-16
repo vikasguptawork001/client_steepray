@@ -34,10 +34,12 @@ const config = {
     // Reports endpoints
     salesReport: '/api/reports/sales',
     salesReportExport: '/api/reports/sales/export',
+    salesBillDetails: (billNumber) => `/api/reports/sales/bill/${billNumber}`,
     itemWiseSalesReport: '/api/reports/sales/items',
     itemWiseSalesReportExport: '/api/reports/sales/items/export',
     returnsReport: '/api/reports/returns',
     returnsReportExport: '/api/reports/returns/export',
+    returnsBillDetails: (identifier) => `/api/reports/returns/bill/${identifier}`,
     
     // Orders endpoints
     orders: '/api/orders',

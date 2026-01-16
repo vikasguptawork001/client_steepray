@@ -81,66 +81,68 @@ const ItemWiseSellReport = () => {
     }
   };
 
-  const exportToExcel = async () => {
-    if (!validateDates()) {
-      return;
-    }
-    try {
-      // Export ALL results from API, ignoring pagination and search filters
-      const from = getLocalDateString(fromDate);
-      const to = getLocalDateString(toDate);
-      const exportParams = {
-        from_date: from,
-        to_date: to,
-        gst_filter: gstFilter
-        // Note: Not including item_query or page/limit to export ALL results
-      };
-      
-      const response = await apiClient.get(config.api.itemWiseSalesReportExport, {
-        params: exportParams,
-        responseType: 'blob'
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `item_wise_sales_all_${from}_${to}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error exporting item-wise report:', error);
-      alert('Error exporting report');
-    }
-  };
-
-  const exportFilteredToExcel = () => {
+  const exportToExcel = () => {
     if (rows.length === 0) return;
     
     try {
+      // Export only the data currently showing on screen (visible/filtered data)
       const data = rows.map(r => ({
         'Product': r.product_name,
         'Brand': r.brand || '-',
         'HSN': r.hsn_number || '-',
-        'Tax %': Number(r.tax_rate || 0).toFixed(2),
+        'Tax %': Math.round(Number(r.tax_rate || 0) * 100) / 100,
         'Qty': Number(r.total_quantity || 0).toFixed(0),
-        'Gross': Number(r.gross_amount || 0).toFixed(2),
-        'Discount': Number(r.discount_amount || 0).toFixed(2),
-        'Taxable/Net': Number(r.taxable_or_net_amount || 0).toFixed(2),
-        'GST': Number(r.gst_amount || 0).toFixed(2),
-        'Net': Number(r.net_amount || 0).toFixed(2),
+        'Gross': Math.round(Number(r.gross_amount || 0) * 100) / 100,
+        'Discount': Math.round(Number(r.discount_amount || 0) * 100) / 100,
+        'Taxable/Net': Math.round(Number(r.taxable_or_net_amount || 0) * 100) / 100,
+        'GST': Math.round(Number(r.gst_amount || 0) * 100) / 100,
+        'Net': Math.round(Number(r.net_amount || 0) * 100) / 100,
         'Bills': r.bills_count
       }));
 
       const ws = XLSX.utils.json_to_sheet(data);
+      
+      // Calculate column widths based on content
+      const colWidths = [];
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell && cell.v) {
+            const cellValue = String(cell.v);
+            const cellLength = cellValue.length;
+            if (cellLength > maxWidth) {
+              maxWidth = cellLength;
+            }
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws['!cols'] = colWidths;
+      
+      // Apply text wrapping and auto row height to all cells
+      if (!ws['!rows']) ws['!rows'] = [];
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        if (!ws['!rows'][R]) ws['!rows'][R] = {};
+        ws['!rows'][R].hpt = undefined; // Auto height
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cellAddress]) continue;
+          if (!ws[cellAddress].s) ws[cellAddress].s = {};
+          ws[cellAddress].s.wrapText = true;
+          ws[cellAddress].s.alignment = { wrapText: true, vertical: 'top' };
+        }
+      }
+      
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Item Wise Sales');
       
-      const from = params.from_date;
-      const to = params.to_date;
-      XLSX.writeFile(wb, `item_wise_sales_filtered_${from}_${to}.xlsx`);
-      alert('Filtered Excel file exported successfully!');
+      const from = getLocalDateString(fromDate);
+      const to = getLocalDateString(toDate);
+      XLSX.writeFile(wb, `item_wise_sales_${from}_${to}.xlsx`);
+      alert('Excel file exported successfully!');
     } catch (error) {
       console.error('Export error:', error);
       alert('Failed to export. Please try again.');
@@ -159,22 +161,17 @@ const ItemWiseSellReport = () => {
       <div className="report">
         <div className="report-header">
           <h2>Item-wise Sell Report</h2>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={exportToExcel} className="btn btn-success">
-              Export to Excel
-            </button>
-            <button 
-              onClick={exportFilteredToExcel} 
-              className="btn btn-primary"
-              disabled={rows.length === 0}
-              style={{
-                opacity: rows.length === 0 ? 0.6 : 1,
-                cursor: rows.length === 0 ? 'not-allowed' : 'pointer'
-              }}
-            >
-              Export to Excel with Filtered
-            </button>
-          </div>
+          <button 
+            onClick={exportToExcel} 
+            className="btn btn-success"
+            disabled={rows.length === 0}
+            style={{
+              opacity: rows.length === 0 ? 0.6 : 1,
+              cursor: rows.length === 0 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Export to Excel
+          </button>
         </div>
 
         <div className="card">
