@@ -1110,7 +1110,7 @@ const Parties = () => {
                 <div style={{ textAlign: 'center', padding: '40px' }}>Loading transaction details...</div>
               ) : transactionDetails ? (
                 <>
-                  {/* Transaction Header */}
+                  {/* Transaction Header    */}
                   <div style={{ marginBottom: '30px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
                       <div>
