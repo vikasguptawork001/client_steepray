@@ -30,7 +30,6 @@ const SellReport = () => {
   
   // Use refs to track and cancel previous requests
   const abortControllerRef = useRef(null);
-  const billDetailsAbortControllerRef = useRef(null);
 
   // Validate dates
   const validateDates = () => {

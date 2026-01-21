@@ -332,7 +332,7 @@ const sellItemSlice = createSlice({
         existingItem.quantity = Math.max(1, (parseInt(existingItem.quantity) || 0) + 1);
       } else {
         // Extract quantity/current_quantity separately to avoid using item.quantity (which is stock) as cart quantity
-        const { quantity: stockQuantity, current_quantity: currentStockQuantity, ...itemWithoutQuantity } = item;
+        const { quantity: stockQuantity, current_quantity: currentStockQuantity } = item;
         const availableStock = currentStockQuantity !== undefined && currentStockQuantity !== null 
           ? parseInt(currentStockQuantity) 
           : (stockQuantity !== undefined && stockQuantity !== null ? parseInt(stockQuantity) : 0);

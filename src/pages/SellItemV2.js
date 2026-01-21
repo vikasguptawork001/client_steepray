@@ -262,7 +262,7 @@ const SellItemV2 = () => {
         return prev.map((x) => (x.item_id === item.id ? { ...x, quantity: Math.max(1, (parseFloat(x.quantity) || 0) + 1) } : x));
       }
       // Extract quantity separately to avoid using item.quantity (which is stock) as cart quantity
-      const { quantity: stockQuantity, current_quantity: currentStockQuantity, ...itemWithoutQuantity } = item;
+      const { quantity: stockQuantity, current_quantity: currentStockQuantity } = item;
       const availableStock = currentStockQuantity !== undefined && currentStockQuantity !== null 
         ? parseInt(currentStockQuantity) 
         : (stockQuantity !== undefined && stockQuantity !== null ? parseInt(stockQuantity) : 0);
