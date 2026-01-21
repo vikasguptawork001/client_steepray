@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 import { getLocalDateString } from '../utils/dateUtils';
 import TransactionLoader from '../components/TransactionLoader';
 import ActionMenu from '../components/ActionMenu';
+import Pagination from '../components/Pagination';
 import './Party.css';
 
 const Parties = () => {
@@ -647,32 +648,16 @@ const Parties = () => {
               {((filter === 'all' && (buyerPagination || sellerPagination)) || 
                 (filter === 'buyer' && buyerPagination) || 
                 (filter === 'seller' && sellerPagination)) && 
-                ((filter === 'buyer' && buyerPagination?.totalPages > 1) ||
-                 (filter === 'seller' && sellerPagination?.totalPages > 1) ||
-                 (filter === 'all' && (buyerPagination?.totalPages > 1 || sellerPagination?.totalPages > 1))) && (
-                <div className="pagination" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
-                  <button 
-                    onClick={() => setPage(p => Math.max(1, p - 1))} 
-                    disabled={page === 1}
-                    className="btn btn-secondary"
-                  >
-                    Previous
-                  </button>
-                  <span>
-                    Page {page} of {filter === 'buyer' ? buyerPagination?.totalPages : filter === 'seller' ? sellerPagination?.totalPages : Math.max(buyerPagination?.totalPages || 0, sellerPagination?.totalPages || 0)} 
-                    ({filter === 'buyer' ? buyerPagination?.totalRecords : filter === 'seller' ? sellerPagination?.totalRecords : (buyerPagination?.totalRecords || 0) + (sellerPagination?.totalRecords || 0)} total records)
-                  </span>
-                  <button 
-                    onClick={() => setPage(p => {
-                      const maxPages = filter === 'buyer' ? buyerPagination?.totalPages : filter === 'seller' ? sellerPagination?.totalPages : Math.max(buyerPagination?.totalPages || 0, sellerPagination?.totalPages || 0);
-                      return Math.min(maxPages, p + 1);
-                    })} 
-                    disabled={page >= (filter === 'buyer' ? buyerPagination?.totalPages : filter === 'seller' ? sellerPagination?.totalPages : Math.max(buyerPagination?.totalPages || 0, sellerPagination?.totalPages || 0))}
-                    className="btn btn-secondary"
-                  >
-                    Next
-                  </button>
-                </div>
+                ((filter === 'buyer' && buyerPagination) ||
+                 (filter === 'seller' && sellerPagination) ||
+                 (filter === 'all' && (buyerPagination || sellerPagination))) && (
+                <Pagination
+                  currentPage={page}
+                  totalPages={filter === 'buyer' ? buyerPagination?.totalPages || 1 : filter === 'seller' ? sellerPagination?.totalPages || 1 : Math.max(buyerPagination?.totalPages || 0, sellerPagination?.totalPages || 0)}
+                  onPageChange={setPage}
+                  totalRecords={filter === 'buyer' ? buyerPagination?.totalRecords : filter === 'seller' ? sellerPagination?.totalRecords : (buyerPagination?.totalRecords || 0) + (sellerPagination?.totalRecords || 0)}
+                  showTotalRecords={true}
+                />
               )}
             </div>
           )}
@@ -682,7 +667,7 @@ const Parties = () => {
       {/* Party Details Modal */}
       {showPartyDetailsModal && selectedParty && partyDetails && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
+          <div className="modal-content" style={{ maxWidth: '900px', maxHeight: '90vh' }}>
             <div className="modal-header">
               <h3>Party Details - {partyDetails.party_name}</h3>
               <button className="modal-close" onClick={() => {
@@ -897,71 +882,25 @@ const Parties = () => {
                         </tbody>
                       </table>
                     </div>
-                    {historyPagination && historyPagination.totalPages > 1 && (
-                      <div className="pagination" style={{ 
+                    {historyPagination && (
+                      <div style={{ 
                         marginTop: '20px', 
                         marginBottom: '10px',
                         padding: '15px',
-                        display: 'flex', 
-                        justifyContent: 'center', 
-                        alignItems: 'center', 
-                        gap: '15px',
-                        flexWrap: 'wrap',
                         backgroundColor: '#f8f9fa',
                         borderRadius: '6px',
                         border: '1px solid #e0e0e0'
                       }}>
-                        <button
-                          onClick={() => {
-                            const newPage = historyPage - 1;
+                        <Pagination
+                          currentPage={historyPage}
+                          totalPages={historyPagination.totalPages}
+                          onPageChange={(newPage) => {
                             setHistoryPage(newPage);
                             fetchTransactionHistory(selectedParty, newPage);
                           }}
-                          disabled={historyPage === 1}
-                          className="btn btn-secondary"
-                          style={{
-                            padding: '10px 20px',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            minWidth: '100px',
-                            border: '1px solid #ddd',
-                            borderRadius: '6px',
-                            cursor: historyPage === 1 ? 'not-allowed' : 'pointer',
-                            opacity: historyPage === 1 ? 0.6 : 1
-                          }}
-                        >
-                          Previous
-                        </button>
-                        <span style={{
-                          padding: '10px 15px',
-                          fontSize: '14px',
-                          fontWeight: '500',
-                          color: '#333',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          Page {historyPage} of {historyPagination.totalPages} ({historyPagination.totalRecords} total)
-                        </span>
-                        <button
-                          onClick={() => {
-                            const newPage = historyPage + 1;
-                            setHistoryPage(newPage);
-                            fetchTransactionHistory(selectedParty, newPage);
-                          }}
-                          disabled={historyPage >= historyPagination.totalPages}
-                          className="btn btn-secondary"
-                          style={{
-                            padding: '10px 20px',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            minWidth: '100px',
-                            border: '1px solid #ddd',
-                            borderRadius: '6px',
-                            cursor: historyPage >= historyPagination.totalPages ? 'not-allowed' : 'pointer',
-                            opacity: historyPage >= historyPagination.totalPages ? 0.6 : 1
-                          }}
-                        >
-                          Next
-                        </button>
+                          totalRecords={historyPagination.totalRecords}
+                          showTotalRecords={true}
+                        />
                       </div>
                     )}
                   </>
@@ -1089,7 +1028,7 @@ const Parties = () => {
       {/* Transaction Details Modal */}
       {showTransactionDetailsModal && selectedTransaction && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}>
+          <div className="modal-content" style={{ maxWidth: '900px', maxHeight: '90vh' }}>
             <div className="modal-header">
               <h3>
                 Transaction Details - {

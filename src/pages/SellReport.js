@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
@@ -8,6 +8,8 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { getLocalDateString } from '../utils/dateUtils';
 import * as XLSX from 'xlsx';
 import ActionMenu from '../components/ActionMenu';
+import Pagination from '../components/Pagination';
+import TransactionLoader from '../components/TransactionLoader';
 import './Report.css';
 
 const SellReport = () => {
@@ -25,6 +27,10 @@ const SellReport = () => {
   const [showBillDetailsModal, setShowBillDetailsModal] = useState(false);
   const [billDetails, setBillDetails] = useState(null);
   const [loadingBillDetails, setLoadingBillDetails] = useState(false);
+  
+  // Use refs to track and cancel previous requests
+  const abortControllerRef = useRef(null);
+  const billDetailsAbortControllerRef = useRef(null);
 
   // Validate dates
   const validateDates = () => {
@@ -39,6 +45,12 @@ const SellReport = () => {
     if (validateDates()) {
       fetchReport();
     }
+    // Cleanup: cancel request on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, gstFilter, page, limit]);
 
@@ -46,20 +58,42 @@ const SellReport = () => {
     if (!validateDates()) {
       return;
     }
+    
+    // Cancel previous request if it exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     try {
       setLoading(true);
       const from = getLocalDateString(fromDate);
       const to = getLocalDateString(toDate);
       const response = await apiClient.get(config.api.salesReport, {
-        params: { from_date: from, to_date: to, gst_filter: gstFilter, page, limit }
+        params: { from_date: from, to_date: to, gst_filter: gstFilter, page, limit },
+        signal: abortController.signal
       });
-      setTransactions(response.data.transactions);
-      setSummary(response.data.summary);
-      setPagination(response.data.pagination);
+      
+      // Only update state if request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setTransactions(response.data.transactions);
+        setSummary(response.data.summary);
+        setPagination(response.data.pagination);
+      }
     } catch (error) {
+      // Ignore abort errors
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
       console.error('Error fetching report:', error);
     } finally {
-      setLoading(false);
+      // Only update loading state if this is still the current request
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
@@ -147,6 +181,7 @@ const SellReport = () => {
 
   return (
     <Layout>
+      <TransactionLoader isLoading={loading || loadingBillDetails} type="transaction" message={loading ? 'Loading sales report...' : loadingBillDetails ? 'Loading bill details...' : ''} />
       <div className="report">
         <div className="report-header">
           <h2>Sell Report</h2>
@@ -218,6 +253,7 @@ const SellReport = () => {
                 setLimit(50);
               }} 
               className="btn btn-primary"
+              disabled={loading}
             >
               Refresh
             </button>
@@ -321,44 +357,38 @@ const SellReport = () => {
                           {txn.with_gst ? 'GST' : 'Non-GST'}
                         </span>
                       </td>
-                      <td>
-                        <ActionMenu
-                          actions={[
-                            {
-                              label: 'View',
-                              icon: '👁️',
-                              onClick: () => fetchBillDetails(txn.bill_number)
-                            }
-                          ]}
-                          itemId={txn.id}
-                          itemName={txn.bill_number}
-                        />
+                      <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                          <ActionMenu
+                            actions={[
+                              {
+                                label: 'View',
+                                icon: '👁️',
+                                onClick: () => fetchBillDetails(txn.bill_number)
+                              }
+                            ]}
+                            itemId={txn.id}
+                            itemName={txn.bill_number}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
-            {pagination && pagination.totalPages > 1 && (
-              <div className="pagination" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
-                <button 
-                  onClick={() => setPage(p => Math.max(1, p - 1))} 
-                  disabled={page === 1}
-                  className="btn btn-secondary"
-                >
-                  Previous
-                </button>
-                <span>
-                  Page {pagination.page} of {pagination.totalPages} ({pagination.totalRecords} total records)
-                </span>
-                <button 
-                  onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} 
-                  disabled={page === pagination.totalPages}
-                  className="btn btn-secondary"
-                >
-                  Next
-                </button>
-              </div>
+            {pagination && !loading && (
+              <Pagination
+                currentPage={page}
+                totalPages={pagination.totalPages}
+                onPageChange={(newPage) => {
+                  if (!loading) {
+                    setPage(newPage);
+                  }
+                }}
+                totalRecords={pagination.totalRecords}
+                showTotalRecords={true}
+              />
             )}
           </div>
         )}
@@ -370,7 +400,7 @@ const SellReport = () => {
               e.stopPropagation();
             }
           }}>
-            <div className="modal-content" style={{ maxWidth: '1000px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content" style={{ maxWidth: '1000px', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h3>Bill Details - {billDetails.bill_number}</h3>
                 <button className="btn-close" onClick={() => {
@@ -437,45 +467,59 @@ const SellReport = () => {
                           Items ({billDetails.items.length})
                         </h4>
                         <div style={{ overflowX: 'auto' }}>
-                          <table className="table" style={{ width: '100%', fontSize: '14px' }}>
+                          <table className="table" style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
                             <thead>
-                              <tr>
-                                <th>S.No</th>
-                                <th>Product Name</th>
-                                <th>Product Code</th>
-                                <th>Brand</th>
-                                <th>HSN</th>
-                                <th>Tax Rate</th>
-                                <th>Qty</th>
-                                <th>Sale Rate</th>
-                                <th>Discount</th>
-                                <th>Gross</th>
-                                <th>Total</th>
-                                <th>GST</th>
-                                <th>Net</th>
+                              <tr style={{ background: '#f8f9fa' }}>
+                                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>S.No</th>
+                                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Product Name</th>
+                                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Product Code</th>
+                                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Brand</th>
+                                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>HSN</th>
+                                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Tax Rate</th>
+                                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Qty</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Sale Rate</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Discount</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Gross</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Total</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>GST</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Net</th>
                               </tr>
                             </thead>
                             <tbody>
                               {billDetails.items.map((item, index) => (
-                                <tr key={item.item_id}>
-                                  <td>{index + 1}</td>
-                                  <td>{item.product_name}</td>
-                                  <td>{item.product_code || '-'}</td>
-                                  <td>{item.brand || '-'}</td>
-                                  <td>{item.hsn_number || '-'}</td>
-                                  <td>{item.tax_rate}%</td>
-                                  <td>{item.quantity}</td>
-                                  <td>₹{Math.round(parseFloat(item.sale_rate || 0) * 100) / 100}</td>
-                                  <td>
+                                <tr key={item.item_id} style={{ borderBottom: '1px solid #e9ecef' }}>
+                                  <td style={{ padding: '12px', textAlign: 'center', verticalAlign: 'middle' }}>{index + 1}</td>
+                                  <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.product_name}</td>
+                                  <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.product_code || '-'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.brand || '-'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.hsn_number || '-'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'center', verticalAlign: 'middle' }}>{item.tax_rate !== null && item.tax_rate !== undefined ? `${item.tax_rate}%` : '0%'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'center', verticalAlign: 'middle' }}>{item.quantity !== null && item.quantity !== undefined ? item.quantity : '0'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums' }}>₹{item.sale_rate !== null && item.sale_rate !== undefined 
+                                    ? Math.round(parseFloat(item.sale_rate) * 100) / 100 
+                                    : '0.00'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums' }}>
                                     {item.discount_type === 'percentage' 
-                                      ? `${item.discount_percentage}% (₹${Math.round(parseFloat(item.discount_amount || 0) * 100) / 100})`
-                                      : `₹${Math.round(parseFloat(item.discount || 0) * 100) / 100}`
+                                      ? `${item.discount_percentage !== null && item.discount_percentage !== undefined ? item.discount_percentage : 0}% (₹${item.discount_amount !== null && item.discount_amount !== undefined ? (Math.round(parseFloat(item.discount_amount) * 100) / 100) : '0.00'})`
+                                      : item.discount !== null && item.discount !== undefined && item.discount !== ''
+                                        ? `₹${Math.round(parseFloat(item.discount) * 100) / 100}`
+                                        : item.discount_amount !== null && item.discount_amount !== undefined && item.discount_amount !== ''
+                                          ? `₹${Math.round(parseFloat(item.discount_amount) * 100) / 100}`
+                                          : '₹0.00'
                                     }
                                   </td>
-                                  <td>₹{Math.round(parseFloat(item.gross_amount || 0) * 100) / 100}</td>
-                                  <td>₹{Math.round(parseFloat(item.total_amount || 0) * 100) / 100}</td>
-                                  <td>₹{Math.round(parseFloat(item.gst_amount || 0) * 100) / 100}</td>
-                                  <td>₹{Math.round(parseFloat(item.net_amount || 0) * 100) / 100}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums' }}>₹{item.gross_amount !== null && item.gross_amount !== undefined 
+                                    ? Math.round(parseFloat(item.gross_amount) * 100) / 100 
+                                    : '0.00'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums' }}>₹{item.total_amount !== null && item.total_amount !== undefined 
+                                    ? Math.round(parseFloat(item.total_amount) * 100) / 100 
+                                    : '0.00'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums' }}>₹{item.gst_amount !== null && item.gst_amount !== undefined 
+                                    ? Math.round(parseFloat(item.gst_amount) * 100) / 100 
+                                    : '0.00'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums' }}>₹{item.net_amount !== null && item.net_amount !== undefined 
+                                    ? Math.round(parseFloat(item.net_amount) * 100) / 100 
+                                    : '0.00'}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -492,54 +536,80 @@ const SellReport = () => {
                         </h4>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', background: '#f8f9fa', padding: '20px', borderRadius: '8px' }}>
                           <div>
-                            <strong>Subtotal:</strong> ₹{Math.round(parseFloat(billDetails.summary.subtotal || 0) * 100) / 100}
+                            <strong>Subtotal:</strong> ₹{billDetails.summary.subtotal !== null && billDetails.summary.subtotal !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.subtotal) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Discount:</strong> ₹{Math.round(parseFloat(billDetails.summary.discount || 0) * 100) / 100}
+                            <strong>Discount:</strong> ₹{billDetails.summary.discount !== null && billDetails.summary.discount !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.discount) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Tax Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.tax_amount || 0) * 100) / 100}
+                            <strong>Tax Amount:</strong> ₹{billDetails.summary.tax_amount !== null && billDetails.summary.tax_amount !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.tax_amount) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Total Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_amount || 0) * 100) / 100}
+                            <strong>Total Amount:</strong> ₹{billDetails.summary.total_amount !== null && billDetails.summary.total_amount !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.total_amount) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Paid Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.paid_amount || 0) * 100) / 100}
+                            <strong>Paid Amount:</strong> ₹{billDetails.summary.paid_amount !== null && billDetails.summary.paid_amount !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.paid_amount) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Balance Amount:</strong> ₹{Math.round(parseFloat(billDetails.summary.balance_amount || 0) * 100) / 100}
+                            <strong>Balance Amount:</strong> ₹{billDetails.summary.balance_amount !== null && billDetails.summary.balance_amount !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.balance_amount) * 100) / 100 
+                              : '0.00'}
                           </div>
-                          {billDetails.summary.previous_balance_paid !== undefined && (
+                          {billDetails.summary.previous_balance_paid !== null && billDetails.summary.previous_balance_paid !== undefined && (
                             <div>
-                              <strong>Previous Balance Paid:</strong> ₹{Math.round(parseFloat(billDetails.summary.previous_balance_paid || 0) * 100) / 100}
+                              <strong>Previous Balance Paid:</strong> ₹{Math.round(parseFloat(billDetails.summary.previous_balance_paid) * 100) / 100}
                             </div>
                           )}
                           <div>
                             <strong>Payment Status:</strong> 
-                            <span className={`status-badge ${billDetails.summary.payment_status}`} style={{ marginLeft: '10px' }}>
-                              {billDetails.summary.payment_status.replace('_', ' ').toUpperCase()}
+                            <span className={`status-badge ${billDetails.summary.payment_status || ''}`} style={{ marginLeft: '10px' }}>
+                              {billDetails.summary.payment_status ? billDetails.summary.payment_status.replace('_', ' ').toUpperCase() : 'N/A'}
                             </span>
                           </div>
                           <div>
-                            <strong>With GST:</strong> {billDetails.summary.with_gst ? 'Yes' : 'No'}
+                            <strong>With GST:</strong> {billDetails.summary.with_gst !== null && billDetails.summary.with_gst !== undefined 
+                              ? (billDetails.summary.with_gst ? 'Yes' : 'No') 
+                              : 'N/A'}
                           </div>
                           <div>
-                            <strong>Total Items:</strong> {billDetails.summary.total_items}
+                            <strong>Total Items:</strong> {billDetails.summary.total_items !== null && billDetails.summary.total_items !== undefined 
+                              ? billDetails.summary.total_items 
+                              : '0'}
                           </div>
                           <div>
-                            <strong>Total Quantity:</strong> {billDetails.summary.total_quantity}
+                            <strong>Total Quantity:</strong> {billDetails.summary.total_quantity !== null && billDetails.summary.total_quantity !== undefined 
+                              ? billDetails.summary.total_quantity 
+                              : '0'}
                           </div>
                           <div>
-                            <strong>Total Gross:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_gross || 0) * 100) / 100}
+                            <strong>Total Gross:</strong> ₹{billDetails.summary.total_gross !== null && billDetails.summary.total_gross !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.total_gross) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Total Taxable/Net:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_taxable_or_net || 0) * 100) / 100}
+                            <strong>Total Taxable/Net:</strong> ₹{billDetails.summary.total_taxable_or_net !== null && billDetails.summary.total_taxable_or_net !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.total_taxable_or_net) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Total GST:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_gst || 0) * 100) / 100}
+                            <strong>Total GST:</strong> ₹{billDetails.summary.total_gst !== null && billDetails.summary.total_gst !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.total_gst) * 100) / 100 
+                              : '0.00'}
                           </div>
                           <div>
-                            <strong>Total Net:</strong> ₹{Math.round(parseFloat(billDetails.summary.total_net || 0) * 100) / 100}
+                            <strong>Total Net:</strong> ₹{billDetails.summary.total_net !== null && billDetails.summary.total_net !== undefined 
+                              ? Math.round(parseFloat(billDetails.summary.total_net) * 100) / 100 
+                              : '0.00'}
                           </div>
                         </div>
                       </div>

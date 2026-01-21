@@ -5,6 +5,8 @@ import config from '../config/config';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import ActionMenu from '../components/ActionMenu';
+import Pagination from '../components/Pagination';
+import TransactionLoader from '../components/TransactionLoader';
 import * as XLSX from 'xlsx';
 import './Dashboard.css';
 
@@ -86,13 +88,40 @@ const Dashboard = () => {
   const fetchItems = async () => {
     try {
       setLoading(true);
-      // Fetch items without search params for client-side filtering
-      // Use a large limit to get all items, or fetch in batches if needed
-      const response = await apiClient.get(config.api.items, {
-        params: { page: 1, limit: 10000 } // Fetch all items for client-side filtering
-      });
-      const fetchedItems = response.data.items || [];
-      setAllItems(fetchedItems);
+      // Fetch items in batches to handle more than 10,000 items
+      let allFetchedItems = [];
+      let currentPage = 1;
+      const batchSize = 10000;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const response = await apiClient.get(config.api.items, {
+          params: { page: currentPage, limit: batchSize }
+        });
+        
+        const items = response.data.items || [];
+        const pagination = response.data.pagination;
+        
+        allFetchedItems = [...allFetchedItems, ...items];
+        
+        // Check if there are more pages
+        if (pagination && pagination.totalPages) {
+          hasMore = currentPage < pagination.totalPages;
+          currentPage++;
+        } else {
+          // If no pagination info, stop if we got less than batchSize items
+          hasMore = items.length === batchSize;
+          currentPage++;
+        }
+        
+        // Safety limit: stop after fetching 50,000 items to prevent memory issues
+        if (allFetchedItems.length >= 50000) {
+          console.warn('Reached safety limit of 50,000 items. Some items may not be loaded.');
+          break;
+        }
+      }
+      
+      setAllItems(allFetchedItems);
       // The useEffect for filtering will handle setting items and pagination
     } catch (error) {
       console.error('Error fetching items:', error);
@@ -324,6 +353,13 @@ const Dashboard = () => {
     setEditingItem(item);
     
     // Store original values for comparison
+    // Handle both purchase_rate and purchase_price field names from API
+    const purchaseRate = item.purchase_rate !== undefined && item.purchase_rate !== null
+      ? item.purchase_rate
+      : (item.purchase_price !== undefined && item.purchase_price !== null
+        ? item.purchase_price
+        : 0);
+    
     const originalData = {
       product_name: item.product_name || '',
       product_code: item.product_code || '',
@@ -331,7 +367,7 @@ const Dashboard = () => {
       hsn_number: item.hsn_number || '',
       tax_rate: item.tax_rate && [5, 18, 28].includes(parseFloat(item.tax_rate)) ? parseFloat(item.tax_rate) : 18,
       sale_rate: parseFloat(item.sale_rate) || 0,
-      purchase_rate: parseFloat(item.purchase_rate) || 0,
+      purchase_rate: parseFloat(purchaseRate) || 0,
       quantity: parseInt(item.quantity) || 0,
       alert_quantity: parseInt(item.alert_quantity) || 0,
       rack_number: item.rack_number || '',
@@ -340,13 +376,33 @@ const Dashboard = () => {
     setOriginalItemData(originalData);
     
     setEditFormData(originalData);
-    // Fetch full item details to get image
+    // Fetch full item details to get image and purchase_rate
     try {
       const response = await apiClient.get(`${config.api.items}/${item.id}`);
-      if (response.data.item.image_base64) {
-        setEditItemImagePreview(`data:image/jpeg;base64,${response.data.item.image_base64}`);
+      const fullItem = response.data.item;
+      
+      // Update image preview
+      if (fullItem.image_base64) {
+        setEditItemImagePreview(`data:image/jpeg;base64,${fullItem.image_base64}`);
       } else {
         setEditItemImagePreview(null);
+      }
+      
+      // Update purchase_rate from API response if available (for super_admin)
+      // Check both purchase_rate and purchase_price (API might use either)
+      const purchaseRate = fullItem.purchase_rate !== undefined && fullItem.purchase_rate !== null 
+        ? fullItem.purchase_rate 
+        : (fullItem.purchase_price !== undefined && fullItem.purchase_price !== null 
+          ? fullItem.purchase_price 
+          : null);
+      
+      if (user?.role === 'super_admin' && purchaseRate !== null) {
+        const updatedFormData = {
+          ...originalData,
+          purchase_rate: parseFloat(purchaseRate) || 0
+        };
+        setEditFormData(updatedFormData);
+        setOriginalItemData(updatedFormData);
       }
     } catch (error) {
       console.error('Error fetching item image:', error);
@@ -496,6 +552,7 @@ const Dashboard = () => {
 
   return (
     <Layout>
+      <TransactionLoader isLoading={updating || deleting || quickSaleLoading} type="transaction" message={updating ? 'Updating item...' : deleting ? 'Deleting item...' : quickSaleLoading ? 'Processing quick sale...' : ''} />
       <div className="dashboard">
         <div className="dashboard-header">
           <h2>Stock Dashboard</h2>
@@ -554,7 +611,27 @@ const Dashboard = () => {
             style={{ flex: 1 }}
           />
           <button
-            onClick={() => setShowAdvancedSearch(!showAdvancedSearch)}
+            onClick={() => {
+              if (showAdvancedSearch) {
+                // Clear advanced search fields when closing
+                setAdvancedSearch({ product_name: '', brand: '', remarks: '' });
+                // Reset to show all items from allItems (client-side pagination will handle it)
+                // The useEffect for client-side filtering will automatically update items
+                setPage(1);
+                // Reset items to show all items from allItems (will be handled by useEffect)
+                // But we need to trigger it by ensuring the state is correct
+                if (allItems.length > 0) {
+                  const startIndex = 0;
+                  const endIndex = limit;
+                  setItems(allItems.slice(startIndex, endIndex));
+                  setTotalPages(Math.ceil(allItems.length / limit));
+                } else {
+                  // If allItems is empty, fetch items again
+                  fetchItems();
+                }
+              }
+              setShowAdvancedSearch(!showAdvancedSearch);
+            }}
             className="btn btn-secondary"
           >
             Advanced Search
@@ -612,7 +689,7 @@ const Dashboard = () => {
               <select
                 value={limit}
                 onChange={(e) => {
-                  setLimit(e.target.value === 'all' ? 'all' : parseInt(e.target.value));
+                  setLimit(parseInt(e.target.value));
                   setPage(1);
                 }}
                 style={{ marginLeft: '10px', padding: '5px' }}
@@ -620,8 +697,8 @@ const Dashboard = () => {
                 <option value="200">200 (Default)</option>
                 <option value="500">500</option>
                 <option value="2000">2000</option>
-                 <option value="10">10</option>
-                <option value="all">All</option>
+                
+                <option value="10000">All</option>
               </select>
             </label>
           </div>
@@ -656,7 +733,7 @@ const Dashboard = () => {
                   ) : (
                     items.map((item, index) => (
                       <tr key={item.id}>
-                        <td>{(page - 1) * (typeof limit === 'number' ? limit : items.length) + index + 1}</td>
+                        <td>{(page - 1) * limit + index + 1}</td>
                         <td>{item.product_name}</td>
                         <td>{item.brand}</td>
                         <td>{item.hsn_number}</td>
@@ -713,19 +790,11 @@ const Dashboard = () => {
               </table>
             </div>
 
-              {totalPages > 1 && (
-                <div className="pagination">
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                    Previous
-                  </button>
-                  <span>
-                    Page {page} of {totalPages}
-                  </span>
-                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                    Next
-                  </button>
-                </div>
-              )}
+              <Pagination
+                currentPage={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+              />
             </>
           )}
         </div>

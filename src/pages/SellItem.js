@@ -86,7 +86,7 @@ const SellItem = () => {
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
-      dispatch(searchItems(searchQuery));
+      dispatch(searchItems({ query: searchQuery, includePurchaseRate: false })); // Selling doesn't need purchase_rate
       setShowItemSearchModal(true);
     } else {
       dispatch(clearSuggestedItems());
@@ -128,6 +128,13 @@ const SellItem = () => {
       // Check if item is out of stock
       if ((item.quantity || 0) <= 0) {
         toast.warning(`⚠️ "${item.product_name || item.item_name}" is out of stock and cannot be added`);
+        return;
+      }
+      
+      // Check if item is already in cart to prevent double-adding
+      const isAlreadyInCart = selectedItems.some(cartItem => cartItem.item_id === item.id);
+      if (isAlreadyInCart) {
+        // Item already exists, don't add again (it will increment quantity if clicked again)
         return;
       }
       
@@ -950,26 +957,21 @@ const SellItem = () => {
                             step="any"
                                   min="0"
                             max="100"
-                            value={item.discount_type === 'percentage' ? (item.discount_percentage || 0) : 0}
+                            value={item.discount_type === 'percentage' ? (item.discount_percentage !== null && item.discount_percentage !== undefined && item.discount_percentage !== 0 ? item.discount_percentage : '') : ''}
                                   onChange={(e) => {
                               const inputVal = e.target.value;
-                              // If empty, set to 0 immediately
+                              // Allow empty string to be set (user can delete 0)
                               if (inputVal === '') {
                                 dispatch(updatePreviewItemDiscount({
                                   itemId: item.item_id,
                                   discountType: 'percentage',
-                                  discountPercentage: 0
+                                  discountPercentage: null
                                 }));
                                 return;
                               }
                               const val = parseFloat(inputVal);
-                              // If invalid, set to 0
+                              // If invalid, don't update (let user continue typing)
                               if (isNaN(val) || val < 0) {
-                                dispatch(updatePreviewItemDiscount({
-                                  itemId: item.item_id,
-                                  discountType: 'percentage',
-                                  discountPercentage: 0
-                                }));
                                 return;
                               }
                               // Valid number - update with constraints
@@ -981,12 +983,12 @@ const SellItem = () => {
                                   }}
                                   onBlur={(e) => {
                               const inputVal = e.target.value;
-                              // If empty or invalid on blur, revert to 0
+                              // If empty on blur, set to null (will show as empty)
                               if (inputVal === '' || isNaN(parseFloat(inputVal))) {
                                 dispatch(updatePreviewItemDiscount({
                                   itemId: item.item_id,
                                   discountType: 'percentage',
-                                  discountPercentage: 0
+                                  discountPercentage: null
                                 }));
                                 return;
                               }

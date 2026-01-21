@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
@@ -7,6 +7,8 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { getLocalDateString } from '../utils/dateUtils';
 import * as XLSX from 'xlsx';
 import ActionMenu from '../components/ActionMenu';
+import Pagination from '../components/Pagination';
+import TransactionLoader from '../components/TransactionLoader';
 import './Report.css';
 
 const ReturnReport = () => {
@@ -23,6 +25,10 @@ const ReturnReport = () => {
   const [showBillDetailsModal, setShowBillDetailsModal] = useState(false);
   const [billDetails, setBillDetails] = useState(null);
   const [loadingBillDetails, setLoadingBillDetails] = useState(false);
+  
+  // Use refs to track and cancel previous requests
+  const abortControllerRef = useRef(null);
+  const billDetailsAbortControllerRef = useRef(null);
 
   // Validate dates
   const validateDates = () => {
@@ -37,6 +43,12 @@ const ReturnReport = () => {
     if (validateDates()) {
       fetchReport();
     }
+    // Cleanup: cancel request on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromDate, toDate, partyType, page, limit]);
 
@@ -44,6 +56,16 @@ const ReturnReport = () => {
     if (!validateDates()) {
       return;
     }
+    
+    // Cancel previous request if it exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     try {
       setLoading(true);
       const from = getLocalDateString(fromDate);
@@ -52,32 +74,68 @@ const ReturnReport = () => {
       if (partyType) {
         params.party_type = partyType;
       }
-      const response = await apiClient.get(config.api.returnsReport, { params });
-      setTransactions(response.data.transactions);
-      setSummary(response.data.summary);
-      setPagination(response.data.pagination);
+      const response = await apiClient.get(config.api.returnsReport, { 
+        params,
+        signal: abortController.signal
+      });
+      
+      // Only update state if request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setTransactions(response.data.transactions);
+        setSummary(response.data.summary);
+        setPagination(response.data.pagination);
+      }
     } catch (error) {
+      // Ignore abort errors
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
       console.error('Error fetching report:', error);
     } finally {
-      setLoading(false);
+      // Only update loading state if this is still the current request
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
   const fetchBillDetails = async (txn) => {
+    // Cancel previous bill details request if it exists
+    if (billDetailsAbortControllerRef.current) {
+      billDetailsAbortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    billDetailsAbortControllerRef.current = abortController;
+    
     try {
       setLoadingBillDetails(true);
       // For seller returns, use bill_number; for buyer returns, use transaction_id
       const identifier = txn.party_type === 'seller' && txn.bill_number 
         ? txn.bill_number 
         : txn.id || txn.transaction_id;
-      const response = await apiClient.get(config.api.returnsBillDetails(identifier));
-      setBillDetails(response.data);
-      setShowBillDetailsModal(true);
+      const response = await apiClient.get(config.api.returnsBillDetails(identifier), {
+        signal: abortController.signal
+      });
+      
+      // Only update state if request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setBillDetails(response.data);
+        setShowBillDetailsModal(true);
+      }
     } catch (error) {
+      // Ignore abort errors
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
       console.error('Error fetching return bill details:', error);
       alert('Error fetching return bill details. Please try again.');
     } finally {
-      setLoadingBillDetails(false);
+      // Only update loading state if this is still the current request
+      if (!abortController.signal.aborted) {
+        setLoadingBillDetails(false);
+      }
     }
   };
 
@@ -151,16 +209,17 @@ const ReturnReport = () => {
 
   return (
     <Layout>
+      <TransactionLoader isLoading={loading || loadingBillDetails} type="transaction" message={loading ? 'Loading return report...' : loadingBillDetails ? 'Loading bill details...' : ''} />
       <div className="report">
         <div className="report-header">
           <h2>Return Report</h2>
           <button 
             onClick={exportToExcel} 
             className="btn btn-success"
-            disabled={exporting || transactions.length === 0}
+            disabled={exporting || transactions.length === 0 || loading}
             style={{
-              opacity: (exporting || transactions.length === 0) ? 0.6 : 1,
-              cursor: (exporting || transactions.length === 0) ? 'not-allowed' : 'pointer'
+              opacity: (exporting || transactions.length === 0 || loading) ? 0.6 : 1,
+              cursor: (exporting || transactions.length === 0 || loading) ? 'not-allowed' : 'pointer'
             }}
           >
             {exporting ? 'Exporting...' : 'Export to Excel'}
@@ -223,6 +282,7 @@ const ReturnReport = () => {
                 setLimit(50);
               }} 
               className="btn btn-primary"
+              disabled={loading}
             >
               Refresh
             </button>
@@ -334,26 +394,18 @@ const ReturnReport = () => {
                 )}
               </tbody>
             </table>
-            {pagination && pagination.totalPages > 1 && (
-              <div className="pagination" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
-                <button 
-                  onClick={() => setPage(p => Math.max(1, p - 1))} 
-                  disabled={page === 1}
-                  className="btn btn-secondary"
-                >
-                  Previous
-                </button>
-                <span>
-                  Page {pagination.page} of {pagination.totalPages} ({pagination.totalRecords} total records)
-                </span>
-                <button 
-                  onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} 
-                  disabled={page === pagination.totalPages}
-                  className="btn btn-secondary"
-                >
-                  Next
-                </button>
-              </div>
+            {pagination && !loading && (
+              <Pagination
+                currentPage={page}
+                totalPages={pagination.totalPages}
+                onPageChange={(newPage) => {
+                  if (!loading) {
+                    setPage(newPage);
+                  }
+                }}
+                totalRecords={pagination.totalRecords}
+                showTotalRecords={true}
+              />
             )}
           </div>
         )}
@@ -365,7 +417,7 @@ const ReturnReport = () => {
               e.stopPropagation();
             }
           }}>
-            <div className="modal-content" style={{ maxWidth: '1000px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content" style={{ maxWidth: '1000px', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h3>Return Bill Details - {billDetails.bill_number || `Transaction #${billDetails.transaction_id}`}</h3>
                 <button className="btn-close" onClick={() => {

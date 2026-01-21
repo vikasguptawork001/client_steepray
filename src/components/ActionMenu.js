@@ -181,6 +181,70 @@ const ActionMenu = ({
     return null;
   }
 
+  // If there's only one action, render it as a direct button instead of menu
+  if (actions.length === 1) {
+    const singleAction = actions[0];
+    const isActionLoading = loadingActionIndex === 0;
+    const isAnyProcessing = loadingActionIndex !== null || globalProcessing;
+    
+    return (
+      <div className="action-menu-wrapper" style={{ position: 'relative' }}>
+        <button
+          ref={buttonRef}
+          type="button"
+          className={`action-menu-single-button ${singleAction.danger ? 'danger' : ''} ${disabled || singleAction.disabled || isActionLoading || isAnyProcessing ? 'disabled' : ''} ${isActionLoading ? 'loading' : ''}`}
+          onClick={async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            if (singleAction.disabled || disabled || isActionLoading || isAnyProcessing) {
+              return;
+            }
+
+            // Set global processing flag immediately
+            globalProcessing = true;
+            setLoadingActionIndex(0);
+            
+            try {
+              if (singleAction.onClick) {
+                const result = singleAction.onClick(itemId, itemName);
+                if (result && typeof result.then === 'function') {
+                  await result;
+                }
+              }
+            } catch (error) {
+              console.error('Action error:', error);
+            } finally {
+              setTimeout(() => {
+                setLoadingActionIndex(null);
+                globalProcessing = false;
+              }, 100);
+            }
+          }}
+          disabled={disabled || singleAction.disabled || isActionLoading || isAnyProcessing}
+          aria-label={singleAction.label || 'Action'}
+          style={{
+            pointerEvents: (disabled || singleAction.disabled || isActionLoading || isAnyProcessing) ? 'none' : 'auto',
+            cursor: (disabled || singleAction.disabled || isActionLoading || isAnyProcessing) ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {isActionLoading ? (
+            <>
+              <span className="action-menu-spinner-small"></span>
+              <span className="action-menu-label">Processing...</span>
+            </>
+          ) : (
+            <>
+              {singleAction.icon && <span className="action-menu-icon">{singleAction.icon}</span>}
+              <span className="action-menu-label">{singleAction.label}</span>
+            </>
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  // Multiple actions - show three-dots menu
   return (
     <div className="action-menu-wrapper" style={{ position: 'relative' }}>
       <button

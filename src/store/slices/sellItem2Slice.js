@@ -8,7 +8,10 @@ export const searchItems = createAsyncThunk(
   'sellItem2/searchItems',
   async (query) => {
     const response = await axios.get(`${API_URL}/items/search`, {
-      params: { query }
+      params: { 
+        q: query,
+        include_purchase_rate: undefined // Selling doesn't need purchase_rate
+      }
     });
     return response.data;
   }
@@ -103,10 +106,17 @@ const sellItem2Slice = createSlice({
       if (existingItem) {
         existingItem.quantity += 1;
       } else {
+        // Extract quantity/current_quantity separately to avoid using item.quantity (which is stock) as cart quantity
+        const { quantity: stockQuantity, current_quantity: currentStockQuantity, ...itemWithoutQuantity } = item;
+        const availableStock = currentStockQuantity !== undefined && currentStockQuantity !== null 
+          ? parseInt(currentStockQuantity) 
+          : (stockQuantity !== undefined && stockQuantity !== null ? parseInt(stockQuantity) : 0);
+        
         state.cartItems.push({
-          ...item,
-          quantity: 1,
-          sale_rate: parseFloat(item.sale_rate) || 0
+          ...itemWithoutQuantity,
+          quantity: 1, // Always start with quantity 1 for new items
+          sale_rate: parseFloat(item.sale_rate) || 0,
+          available_quantity: availableStock // Store stock as available_quantity
         });
       }
     },

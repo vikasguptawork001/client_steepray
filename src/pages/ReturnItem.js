@@ -63,7 +63,7 @@ const ReturnItem = () => {
       setSuggestedItems([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery]);
+  }, [searchQuery, partyType]); // Include partyType so search includes purchase_rate for buyer returns
 
   useEffect(() => {
     if (selectedParty && partyType) {
@@ -135,11 +135,15 @@ const ReturnItem = () => {
   const searchItems = async () => {
     try {
       const response = await apiClient.get(config.api.itemsSearch, {
-        params: { q: searchQuery }
+        params: { 
+          q: searchQuery,
+          include_purchase_rate: partyType === 'buyer' ? 'true' : undefined // Include purchase_rate for buyer returns
+        }
       });
       setSuggestedItems(response.data.items);
     } catch (error) {
       console.error('Error searching items:', error);
+      setSuggestedItems([]);
     }
   };
 
@@ -173,48 +177,56 @@ const ReturnItem = () => {
     let successCount = 0;
     let skippedCount = 0;
     
-    for (const item of itemsToAdd) {
-      // For buyer returns, skip items with 0 quantity
-      // For seller returns, allow out-of-stock items (seller is giving them back)
+    // Filter out out-of-stock items for buyer returns
+    const validItemsToAdd = itemsToAdd.filter(item => {
       if ((item.quantity || 0) <= 0 && partyType === 'buyer') {
         skippedCount++;
-        continue;
+        return false;
       }
-      
-      try {
-        // Fetch full item details
-        const response = await apiClient.get(`${config.api.items}/${item.id}`);
-        const fullItemData = response.data.item;
+      return true;
+    });
 
+    if (validItemsToAdd.length === 0) {
+      if (skippedCount > 0) {
+        toast.warning(`⚠️ All selected items are out of stock`);
+      }
+      setSelectedItemIds(new Set());
+      return;
+    }
+
+    // Use search data directly (which already includes purchase_rate for buyer returns)
+    // No need for additional API call since search API returns complete data
+    setSelectedItems(prev => {
+      const updatedItems = [...prev];
+      validItemsToAdd.forEach(item => {
         // Check if item already exists in cart
-        const existingItem = selectedItems.find(i => i.item_id === item.id);
-        if (existingItem) {
+        const existingItemIndex = updatedItems.findIndex(i => i.item_id === item.id);
+        if (existingItemIndex >= 0) {
           // Increment quantity if item already in cart
-          setSelectedItems(prev => prev.map(i =>
-            i.item_id === item.id ? { ...i, quantity: (i.quantity || 1) + 1 } : i
-          ));
+          updatedItems[existingItemIndex] = {
+            ...updatedItems[existingItemIndex],
+            quantity: (updatedItems[existingItemIndex].quantity || 1) + 1
+          };
         } else {
-          // Add new item to cart
-          setSelectedItems(prev => [...prev, {
-            item_id: fullItemData.id,
-            product_name: fullItemData.product_name,
-            product_code: fullItemData.product_code || '',
-            brand: fullItemData.brand || '',
-            sale_rate: parseFloat(fullItemData.sale_rate || 0),
-            purchase_rate: parseFloat(fullItemData.purchase_rate || 0),
+          // Add new item to cart using search data (which includes purchase_rate for buyer returns)
+          updatedItems.push({
+            item_id: item.id,
+            product_name: item.product_name,
+            product_code: item.product_code || '',
+            brand: item.brand || '',
+            sale_rate: parseFloat(item.sale_rate || 0),
+            purchase_rate: parseFloat(item.purchase_rate || 0), // Already included in search for buyer returns
             quantity: 1,
-            available_quantity: fullItemData.quantity || 0,
+            available_quantity: parseInt(item.quantity) || 0,
             discount: 0,
-            discount_type: 'amount',
+            discount_type: 'percentage',
             discount_percentage: null
-          }]);
+          });
         }
         successCount++;
-      } catch (error) {
-        console.error('Error adding item to cart:', error);
-        skippedCount++;
-      }
-    }
+      });
+      return updatedItems;
+    });
     
     if (successCount > 0) {
       toast.success(`✓ Added ${successCount} item${successCount !== 1 ? 's' : ''} to return list`);
@@ -235,50 +247,42 @@ const ReturnItem = () => {
   };
 
   const addItemToCart = async (item) => {
-    try {
-      // For buyer returns, prevent adding out-of-stock items
-      // For seller returns, allow out-of-stock items (seller is giving them back)
-      if ((item.quantity || 0) <= 0 && partyType === 'buyer') {
-        toast.warning(`⚠️ "${item.product_name || item.item_name}" is out of stock and cannot be added`);
-        return;
-      }
-
-      // Fetch full item details
-      const response = await apiClient.get(`${config.api.items}/${item.id}`);
-      const fullItemData = response.data.item;
-
-      // Check if item already exists in cart
-      const existingItem = selectedItems.find(i => i.item_id === item.id);
-      if (existingItem) {
-        // Increment quantity if item already in cart
-        setSelectedItems(selectedItems.map(i =>
-          i.item_id === item.id ? { ...i, quantity: (i.quantity || 1) + 1 } : i
-        ));
-      } else {
-        // Add new item to cart
-        setSelectedItems([...selectedItems, {
-          item_id: fullItemData.id,
-          product_name: fullItemData.product_name,
-          product_code: fullItemData.product_code || '',
-          brand: fullItemData.brand || '',
-          sale_rate: parseFloat(fullItemData.sale_rate || 0),
-          purchase_rate: parseFloat(fullItemData.purchase_rate || 0),
-          quantity: 1,
-          available_quantity: fullItemData.quantity || 0,
-          discount: 0,
-          discount_type: 'amount',
-          discount_percentage: null
-        }]);
-      }
-      
-      // Don't clear search or close modal - allow adding multiple items
-      // Keep UX smooth: no toast spam on every item add
-      setShowPreview(false);
-      setPreviewData(null);
-    } catch (error) {
-      console.error('Error fetching item details:', error);
-      toast.error('Error loading item details');
+    // For buyer returns, prevent adding out-of-stock items
+    // For seller returns, allow out-of-stock items (seller is giving them back)
+    if ((item.quantity || 0) <= 0 && partyType === 'buyer') {
+      toast.warning(`⚠️ "${item.product_name || item.item_name}" is out of stock and cannot be added`);
+      return;
     }
+
+    // Use search data directly (which already includes purchase_rate for buyer returns)
+    // No need for additional API call since search API returns complete data
+    const existingItem = selectedItems.find(i => i.item_id === item.id);
+    if (existingItem) {
+      // Increment quantity if item already in cart
+      setSelectedItems(prev => prev.map(i =>
+        i.item_id === item.id ? { ...i, quantity: (i.quantity || 1) + 1 } : i
+      ));
+    } else {
+      // Add new item to cart using search data (which includes purchase_rate for buyer returns)
+      setSelectedItems(prev => [...prev, {
+        item_id: item.id,
+        product_name: item.product_name,
+        product_code: item.product_code || '',
+        brand: item.brand || '',
+        sale_rate: parseFloat(item.sale_rate || 0),
+        purchase_rate: parseFloat(item.purchase_rate || 0), // Already included in search for buyer returns
+        quantity: 1,
+        available_quantity: parseInt(item.quantity) || 0,
+        discount: 0,
+        discount_type: 'percentage',
+        discount_percentage: null
+      }]);
+    }
+    
+    // Don't clear search or close modal - allow adding multiple items
+    // Keep UX smooth: no toast spam on every item add
+    setShowPreview(false);
+    setPreviewData(null);
   };
 
   const updateItemQuantity = (itemId, quantity) => {
@@ -1071,7 +1075,7 @@ const ReturnItem = () => {
                             {item.quantity > 0 ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                                 <select
-                                  value={item.discount_type || 'amount'}
+                                  value={item.discount_type || 'percentage'}
                                   onChange={(e) => {
                                     const newDiscountType = e.target.value;
                                     updateItemDiscount(item.item_id, 
@@ -1091,33 +1095,39 @@ const ReturnItem = () => {
                                   min="0"
                                   value={item.discount_type === 'percentage' 
                                     ? (item.discount_percentage !== null && item.discount_percentage !== undefined ? item.discount_percentage : '')
-                                    : (item.discount || 0)}
+                                    : (item.discount && item.discount !== 0 ? item.discount : '')}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     if (val !== '' && !/^[\d.]*$/.test(val)) return;
                                     if ((val.match(/\./g) || []).length > 1) return;
                                     
                                     if (item.discount_type === 'percentage') {
-                                      const numVal = val === '' ? null : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? null : parseFloat(val)));
+                                      // Allow empty string (user can delete 0)
+                                      const numVal = val === '' ? null : (val === '.' ? null : (isNaN(parseFloat(val)) ? null : parseFloat(val)));
                                       if (numVal !== null && numVal > 100) return;
                                       updateItemDiscount(item.item_id, undefined, undefined, numVal);
                                     } else {
-                                      const numVal = val === '' ? 0 : (val === '.' ? 0 : (isNaN(parseFloat(val)) ? 0 : parseFloat(val)));
-                                      const itemTotal = (partyType === 'buyer'
-                                        ? parseFloat(item.purchase_rate || 0)
-                                        : parseFloat(item.sale_rate || 0)
-                                      ) * parseInt(item.quantity || 0);
-                                      if (numVal > itemTotal) return;
-                                      updateItemDiscount(item.item_id, numVal);
+                                      // Allow empty string (user can delete 0)
+                                      const numVal = val === '' ? null : (val === '.' ? null : (isNaN(parseFloat(val)) ? null : parseFloat(val)));
+                                      if (numVal !== null) {
+                                        const itemTotal = (partyType === 'buyer'
+                                          ? parseFloat(item.purchase_rate || 0)
+                                          : parseFloat(item.sale_rate || 0)
+                                        ) * parseInt(item.quantity || 0);
+                                        if (numVal > itemTotal) return;
+                                      }
+                                      updateItemDiscount(item.item_id, numVal !== null ? numVal : 0);
                                     }
                                   }}
                                   onBlur={(e) => {
                                     const val = e.target.value;
                                     if (item.discount_type === 'percentage') {
-                                      const newDiscountPct = val === '' ? null : (parseFloat(val) || 0);
+                                      // If empty on blur, set to null (will show as empty)
+                                      const newDiscountPct = val === '' ? null : (isNaN(parseFloat(val)) ? null : parseFloat(val));
                                       updateItemDiscount(item.item_id, undefined, undefined, newDiscountPct);
                                     } else {
-                                      const newDiscount = val === '' ? 0 : (parseFloat(val) || 0);
+                                      // If empty on blur, set to 0
+                                      const newDiscount = val === '' ? 0 : (isNaN(parseFloat(val)) ? 0 : parseFloat(val));
                                       updateItemDiscount(item.item_id, newDiscount);
                                     }
                                   }}

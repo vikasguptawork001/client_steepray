@@ -283,6 +283,10 @@
   background: #f8f9fa;
   display: flex;
   justify-content: flex-end;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  flex-shrink: 0;
 }
 
 /* Scrollbar */

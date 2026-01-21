@@ -139,7 +139,10 @@ const AddItem = () => {
   const searchItems = async () => {
     try {
       const response = await apiClient.get(config.api.itemsSearch, {
-        params: { q: searchQuery }
+        params: { 
+          q: searchQuery,
+          include_purchase_rate: 'true' // AddItem is for buyer purchase, needs purchase_rate
+        }
       });
       setSuggestedItems(response.data.items);
     } catch (error) {
@@ -171,50 +174,74 @@ const AddItem = () => {
     let successCount = 0;
     let errorCount = 0;
     
-    for (const item of itemsToAdd) {
-      try {
-        // Fetch full item details from database
-        const response = await apiClient.get(`${config.api.items}/${item.id}`);
-        const fullItemData = response.data.item;
-        
-        // Parse tax_rate
-        const taxRateValue = fullItemData.tax_rate !== undefined && fullItemData.tax_rate !== null
-          ? parseFloat(fullItemData.tax_rate)
-          : 18;
-        const validTaxRates = [5, 18, 28];
-        const finalTaxRate = !isNaN(taxRateValue) && validTaxRates.includes(taxRateValue) 
-          ? taxRateValue 
-          : 18;
-        
-        const existingItem = selectedItems.find(i => i.item_id === item.id);
-        if (existingItem) {
-          // If item already in cart, just increment quantity
-          setSelectedItems(prev => prev.map(i =>
-            i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i
-          ));
-        } else {
-          // Add new item to cart
-          setSelectedItems(prev => [...prev, {
-            item_id: fullItemData.id,
-            product_name: fullItemData.product_name,
-            product_code: fullItemData.product_code || '',
-            brand: fullItemData.brand || '',
-            hsn_number: fullItemData.hsn_number || '',
-            tax_rate: finalTaxRate,
-            sale_rate: parseFloat(fullItemData.sale_rate) || 0,
-            purchase_rate: parseFloat(fullItemData.purchase_rate) || 0,
-            quantity: 1,
-            alert_quantity: parseInt(fullItemData.alert_quantity) || 0,
-            rack_number: fullItemData.rack_number || '',
-            remarks: fullItemData.remarks || '',
-            current_quantity: parseInt(fullItemData.quantity) || 0
-          }]);
-        }
-        successCount++;
-      } catch (error) {
-        console.error('Error adding item to cart:', error);
-        errorCount++;
+    try {
+      // Fetch all item details in a single batch API call
+      const itemIds = itemsToAdd.map(item => item.id);
+      const response = await apiClient.post(config.api.itemsDetails, {
+        item_ids: itemIds,
+        include_purchase_rate: true // AddItem is for buyer purchase, needs purchase_rate
+      });
+
+      // Create a map of item_id -> item details for quick lookup
+      const itemsDetailsMap = new Map();
+      if (response.data && response.data.items) {
+        response.data.items.forEach(item => {
+          itemsDetailsMap.set(item.id, item);
+        });
       }
+
+      // Add items to cart using batch API data
+      setSelectedItems(prev => {
+        const updatedItems = [...prev];
+        itemsToAdd.forEach(item => {
+          const itemDetails = itemsDetailsMap.get(item.id);
+          if (!itemDetails) {
+            errorCount++;
+            return;
+          }
+
+          // Parse tax_rate
+          const taxRateValue = itemDetails.tax_rate !== undefined && itemDetails.tax_rate !== null
+            ? parseFloat(itemDetails.tax_rate)
+            : 18;
+          const validTaxRates = [5, 18, 28];
+          const finalTaxRate = !isNaN(taxRateValue) && validTaxRates.includes(taxRateValue) 
+            ? taxRateValue 
+            : 18;
+
+          const existingItemIndex = updatedItems.findIndex(i => i.item_id === item.id);
+          if (existingItemIndex >= 0) {
+            // If item already in cart, just increment quantity
+            updatedItems[existingItemIndex] = {
+              ...updatedItems[existingItemIndex],
+              quantity: updatedItems[existingItemIndex].quantity + 1
+            };
+          } else {
+            // Add new item to cart - use search data which now includes purchase_rate
+            updatedItems.push({
+              item_id: itemDetails.id,
+              product_name: itemDetails.product_name,
+              product_code: itemDetails.product_code || '',
+              brand: itemDetails.brand || '',
+              hsn_number: itemDetails.hsn_number || '',
+              tax_rate: finalTaxRate,
+              sale_rate: parseFloat(itemDetails.sale_rate) || 0,
+              purchase_rate: parseFloat(itemDetails.purchase_rate) || 0,
+              quantity: 1,
+              alert_quantity: 0, // Will be set when submitting
+              rack_number: '', // Will be set when submitting
+              remarks: '', // Will be set when submitting
+              current_quantity: parseInt(itemDetails.quantity) || 0
+            });
+          }
+          successCount++;
+        });
+        return updatedItems;
+      });
+    } catch (error) {
+      console.error('Error fetching batch item details:', error);
+      toast.error('Error loading item details');
+      errorCount += itemsToAdd.length;
     }
     
     if (successCount > 0) {
@@ -232,43 +259,40 @@ const AddItem = () => {
   const addItemToCart = async (item) => {
     try {
       // Note: We allow adding items even if out of stock, since this is for filling inventory
-      // Fetch full item details from database to get all saved data
-      const response = await apiClient.get(`${config.api.items}/${item.id}`);
-      const fullItemData = response.data.item;
+      // Use search data directly (which now includes purchase_rate) instead of making another API call
+      // The search API already returns all necessary fields including purchase_rate
       
       // Parse tax_rate to ensure it's a number (backend might send it as string)
-      const taxRateValue = fullItemData.tax_rate !== undefined && fullItemData.tax_rate !== null
-        ? parseFloat(fullItemData.tax_rate)
+      const taxRateValue = item.tax_rate !== undefined && item.tax_rate !== null
+        ? parseFloat(item.tax_rate)
         : 18;
       const validTaxRates = [5, 18, 28];
       const finalTaxRate = !isNaN(taxRateValue) && validTaxRates.includes(taxRateValue) 
         ? taxRateValue 
         : 18;
       
-      console.log('addItemToCart - tax_rate from backend:', fullItemData.tax_rate, 'Type:', typeof fullItemData.tax_rate, 'Parsed:', taxRateValue, 'Final:', finalTaxRate);
-      
       const existingItem = selectedItems.find(i => i.item_id === item.id);
       if (existingItem) {
         // If item already in cart, just increment quantity
-        setSelectedItems(selectedItems.map(i =>
+        setSelectedItems(prev => prev.map(i =>
           i.item_id === item.id ? { ...i, quantity: i.quantity + 1 } : i
         ));
       } else {
-        // Add item with all saved data from database, only quantity is editable
-        setSelectedItems([...selectedItems, {
-          item_id: fullItemData.id,
-          product_name: fullItemData.product_name,
-          product_code: fullItemData.product_code || '',
-          brand: fullItemData.brand || '',
-          hsn_number: fullItemData.hsn_number || '',
+        // Add item using search data (which includes purchase_rate)
+        setSelectedItems(prev => [...prev, {
+          item_id: item.id,
+          product_name: item.product_name,
+          product_code: item.product_code || '',
+          brand: item.brand || '',
+          hsn_number: item.hsn_number || '',
           tax_rate: finalTaxRate, // Use the parsed and validated tax rate
-          sale_rate: parseFloat(fullItemData.sale_rate) || 0,
-          purchase_rate: parseFloat(fullItemData.purchase_rate) || 0,
+          sale_rate: parseFloat(item.sale_rate) || 0,
+          purchase_rate: parseFloat(item.purchase_rate) || 0,
           quantity: 1, // Only this field will be editable
-          alert_quantity: parseInt(fullItemData.alert_quantity) || 0,
-          rack_number: fullItemData.rack_number || '',
-          remarks: fullItemData.remarks || '',
-          current_quantity: parseInt(fullItemData.quantity) || 0 // Store current quantity for reference
+          alert_quantity: 0, // Will be set when submitting
+          rack_number: '', // Will be set when submitting
+          remarks: '', // Will be set when submitting
+          current_quantity: parseInt(item.quantity) || 0 // Store current quantity for reference
         }]);
       }
       
@@ -958,9 +982,7 @@ const AddItem = () => {
                     <th>Tax Rate</th>
                     <th>Sale Rate</th>
                     <th>Quantity</th>
-                    <th>Alert Qty</th>
-                    <th>Rack No</th>
-                    <th>Remarks</th>
+
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -1007,17 +1029,7 @@ const AddItem = () => {
                           </small>
                         )}
                       </td>
-                      <td>
-                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.alert_quantity || 0}</span>
-                      </td>
-                      <td>
-                        <span style={{ padding: '5px', display: 'inline-block' }}>{item.rack_number || '-'}</span>
-                      </td>
-                      <td>
-                        <span style={{ padding: '5px', display: 'inline-block', fontSize: '12px' }} title={item.remarks || ''}>
-                          {item.remarks ? (item.remarks.length > 20 ? item.remarks.substring(0, 20) + '...' : item.remarks) : '-'}
-                        </span>
-                      </td>
+
                       <td>
                         <ActionMenu
                           itemId={item.item_id}

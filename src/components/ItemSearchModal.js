@@ -14,6 +14,7 @@ const ItemSearchModal = ({
 }) => {
   const searchInputRef = useRef(null);
   const [selectedItemIds, setSelectedItemIds] = useState(new Set());
+  const addingItemsRef = useRef(new Set()); // Track items currently being added to prevent double-adds
 
   useEffect(() => {
     if (isOpen && searchInputRef.current) {
@@ -47,18 +48,38 @@ const ItemSearchModal = ({
     }
   }, [items, isOpen, selectedItems]);
 
-  const handleCheckboxChange = (item) => {
+  const handleCheckboxChange = (item, event) => {
     const isOutOfStock = (item.quantity || 0) <= 0;
     if (isOutOfStock && !allowOutOfStock) return;
 
+    // Prevent double-triggering if event is from checkbox
+    if (event && event.target && event.target.type === 'checkbox') {
+      event.stopPropagation();
+    }
+
     setSelectedItemIds(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(item.id)) {
+      const wasSelected = newSet.has(item.id);
+      if (wasSelected) {
         newSet.delete(item.id);
       } else {
         newSet.add(item.id);
-        // Auto-add to cart when checkbox is checked
-        onItemSelect(item);
+        // Auto-add to cart when checkbox is checked (only if not already in cart or currently being added)
+        // Check if item is already in selectedItems to avoid double-adding
+        const isAlreadyInCart = selectedItems && selectedItems.some(selectedItem => 
+          selectedItem.item_id === item.id || selectedItem.item_id === item.item_id
+        );
+        const isCurrentlyAdding = addingItemsRef.current.has(item.id);
+        
+        if (!isAlreadyInCart && !isCurrentlyAdding) {
+          // Mark as being added to prevent double-adds
+          addingItemsRef.current.add(item.id);
+          onItemSelect(item);
+          // Clear the flag after a short delay to allow state to update
+          setTimeout(() => {
+            addingItemsRef.current.delete(item.id);
+          }, 500);
+        }
       }
       return newSet;
     });
@@ -154,15 +175,29 @@ const ItemSearchModal = ({
                   <div
                     key={item.id}
                     className={`item-search-modal-card ${isSelected ? 'selected' : ''} ${isOutOfStock && !allowOutOfStock ? 'out-of-stock' : ''}`}
-                    onClick={() => (allowOutOfStock || !isOutOfStock) && handleCheckboxChange(item)}
+                    onClick={(e) => {
+                      // Only trigger if not clicking on checkbox or its label
+                      // Check if the click target is the checkbox or inside the checkbox container
+                      const isCheckboxClick = e.target.type === 'checkbox' || 
+                                             e.target.closest('.item-search-modal-checkbox') ||
+                                             e.target.closest('.item-search-modal-card-header');
+                      if (!isCheckboxClick && (allowOutOfStock || !isOutOfStock)) {
+                        handleCheckboxChange(item, e);
+                      }
+                    }}
                   >
                     <div className="item-search-modal-card-header">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         disabled={isOutOfStock && !allowOutOfStock}
-                        onChange={() => handleCheckboxChange(item)}
-                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleCheckboxChange(item, e);
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
                         className="item-search-modal-checkbox"
                       />
                       <h3 className="item-search-modal-product-name">

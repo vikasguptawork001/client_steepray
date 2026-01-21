@@ -29,9 +29,13 @@ export const fetchSellerInfo = createAsyncThunk(
 
 export const searchItems = createAsyncThunk(
   'sellItem/searchItems',
-  async (query, { rejectWithValue }) => {
+  async ({ query, includePurchaseRate = false }, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`${config.api.itemsSearch}?q=${encodeURIComponent(query)}`);
+      const params = { q: query };
+      if (includePurchaseRate) {
+        params.include_purchase_rate = 'true';
+      }
+      const response = await apiClient.get(config.api.itemsSearch, { params });
       return response.data.items || [];
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || 'Failed to search items');
@@ -46,42 +50,54 @@ export const calculatePreview = createAsyncThunk(
     const previousBalance = parseFloat(sellerInfo?.balance_amount || 0);
     const effectivePreviousBalancePaid = previousBalance > 0 ? previousBalance : 0;
     try {
-      // Fetch latest stock info for all items
-      const itemsWithStock = await Promise.all(selectedItems.map(async (item) => {
-        try {
-          const response = await apiClient.get(`${config.api.items}/${item.item_id}`);
-          return {
-            ...item,
-            available_quantity: response.data.item.quantity
-          };
-        } catch (error) {
-          return {
-            ...item,
-            available_quantity: item.available_quantity || 0
-          };
+      // Fetch all item details in a single batch API call
+      const itemIds = selectedItems.map(item => item.item_id);
+      let itemsDetailsMap = new Map();
+      
+      try {
+        const response = await apiClient.post(config.api.itemsDetails, {
+          item_ids: itemIds,
+          include_purchase_rate: false // For selling, we don't need purchase rate
+        });
+        
+        // Create a map of item_id -> item details for quick lookup
+        if (response.data && response.data.items) {
+          response.data.items.forEach(item => {
+            itemsDetailsMap.set(item.id, item);
+          });
         }
-      }));
+      } catch (error) {
+        console.error('Error fetching batch item details:', error);
+        // Fallback: continue with existing item data if batch API fails
+      }
 
-      // Fetch tax_rate and hsn_number for items that don't have it
-      const itemsWithTax = await Promise.all(itemsWithStock.map(async (item) => {
-        if (!item.tax_rate || !item.hsn_number) {
-          try {
-            const response = await apiClient.get(`${config.api.items}/${item.item_id}`);
-            return { 
-              ...item, 
-              tax_rate: item.tax_rate || response.data.item.tax_rate || 0,
-              hsn_number: item.hsn_number || response.data.item.hsn_number || ''
-            };
-          } catch (error) {
-            return { 
-              ...item, 
-              tax_rate: item.tax_rate || 0,
-              hsn_number: item.hsn_number || ''
-            };
-          }
+      // Merge batch API response with selectedItems (preserving cart quantity, discount, etc.)
+      const itemsWithDetails = selectedItems.map(item => {
+        const itemDetails = itemsDetailsMap.get(item.item_id);
+        if (itemDetails) {
+          return {
+            ...item,
+            // Update with latest details from API
+            product_name: itemDetails.product_name || item.product_name,
+            product_code: itemDetails.product_code || item.product_code,
+            brand: itemDetails.brand || item.brand,
+            hsn_number: itemDetails.hsn_number || item.hsn_number || '',
+            tax_rate: itemDetails.tax_rate || item.tax_rate || 0,
+            sale_rate: itemDetails.sale_rate || item.sale_rate || 0,
+            purchase_rate: itemDetails.purchase_rate || item.purchase_rate || 0,
+            // Stock quantity from API (quantity field in response)
+            available_quantity: itemDetails.quantity || item.available_quantity || 0
+          };
         }
-        return item;
-      }));
+        // If item not found in batch response, use existing data
+        return {
+          ...item,
+          tax_rate: item.tax_rate || 0,
+          hsn_number: item.hsn_number || ''
+        };
+      });
+      
+      const itemsWithTax = itemsWithDetails;
       
       // Calculate amounts
       let subtotal = 0;
@@ -312,16 +328,23 @@ const sellItemSlice = createSlice({
       const existingItem = state.selectedItems.find(i => i.item_id === item.id);
       
       if (existingItem) {
-        existingItem.quantity = (parseInt(existingItem.quantity) || 0) + 1;
+        // If item already exists, increment quantity by 1
+        existingItem.quantity = Math.max(1, (parseInt(existingItem.quantity) || 0) + 1);
       } else {
+        // Extract quantity/current_quantity separately to avoid using item.quantity (which is stock) as cart quantity
+        const { quantity: stockQuantity, current_quantity: currentStockQuantity, ...itemWithoutQuantity } = item;
+        const availableStock = currentStockQuantity !== undefined && currentStockQuantity !== null 
+          ? parseInt(currentStockQuantity) 
+          : (stockQuantity !== undefined && stockQuantity !== null ? parseInt(stockQuantity) : 0);
+        
         state.selectedItems.push({
           item_id: item.id,
           product_name: item.product_name,
           sale_rate: parseFloat(item.sale_rate) || 0,
           tax_rate: parseFloat(item.tax_rate) || 0,
           hsn_number: item.hsn_number || '',
-          quantity: 1,
-          available_quantity: parseInt(item.quantity) || 0,
+          quantity: 1, // Always start with quantity 1 for new items
+          available_quantity: availableStock, // Store stock as available_quantity
           discount: 0,
           discount_type: 'percentage',
           discount_percentage: null

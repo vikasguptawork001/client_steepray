@@ -20,6 +20,7 @@ const config = {
     itemsAdvancedSearch: '/api/items/advanced-search',
     itemsPurchase: '/api/items/purchase',
     itemsStockTotal: '/api/items/stock/total-amount',
+    itemsDetails: '/api/items/details',
     
     // Parties endpoints
     buyers: '/api/parties/buyers',

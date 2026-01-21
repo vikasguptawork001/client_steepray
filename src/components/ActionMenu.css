@@ -20,6 +20,58 @@
   line-height: 1;
 }
 
+/* Single action button - shows directly instead of three-dots */
+.action-menu-single-button {
+  background: transparent;
+  border: 1px solid #e1e8ed;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  min-width: auto;
+  height: 32px;
+  color: #495057;
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.action-menu-single-button:hover:not(.disabled) {
+  background: #f8f9fa;
+  border-color: #3498db;
+  color: #3498db;
+}
+
+.action-menu-single-button:active:not(.disabled) {
+  background: #e9ecef;
+  transform: scale(0.98);
+}
+
+.action-menu-single-button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-menu-single-button.loading {
+  cursor: wait;
+  pointer-events: none;
+}
+
+.action-menu-single-button.danger {
+  color: #dc3545;
+  border-color: #f5c6cb;
+}
+
+.action-menu-single-button.danger:hover:not(.disabled) {
+  background: #fff5f5;
+  border-color: #dc3545;
+  color: #c82333;
+}
+
 .action-menu-button:hover:not(.disabled) {
   background: #f8f9fa;
   border-color: #3498db;

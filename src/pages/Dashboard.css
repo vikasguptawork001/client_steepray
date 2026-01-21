@@ -52,6 +52,91 @@
   flex-shrink: 0;
 }
 
+/* Pagination Styles */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.pagination-btn {
+  min-width: 40px;
+  height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+  border-color: #007bff;
+  color: #007bff;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
+.pagination-btn.active {
+  background: #007bff;
+  border-color: #007bff;
+  color: white;
+  font-weight: 600;
+}
+
+.pagination-btn.active:hover {
+  background: #0056b3;
+  border-color: #0056b3;
+}
+
+.pagination-ellipsis {
+  padding: 8px 4px;
+  color: #666;
+  font-size: 14px;
+  user-select: none;
+}
+
+.pagination-info {
+  margin-left: 16px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .pagination {
+    gap: 4px;
+  }
+  
+  .pagination-btn {
+    min-width: 36px;
+    height: 36px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  .pagination-info {
+    margin-left: 8px;
+    font-size: 12px;
+  }
+}
+
 .table-container {
   overflow-x: auto;
   background: white;
@@ -183,15 +268,10 @@
   max-width: 600px;
   width: 90%;
   max-height: 90vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  /* Hide scrollbar for Chrome, Safari and Opera */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
-}
-
-.modal-content::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+  overflow: hidden;
 }
 
 .modal-header {
@@ -200,6 +280,11 @@
   align-items: center;
   padding: 20px;
   border-bottom: 1px solid #eee;
+  background: white;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -244,6 +329,11 @@
   gap: 10px;
   padding: 20px;
   border-top: 1px solid #eee;
+  background: white;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  flex-shrink: 0;
 }
 
 .form-row {
@@ -286,44 +376,61 @@
 /* View Item Modal Specific Styles */
 .view-item-modal {
   max-width: 900px !important;
-  /* Hide scrollbar for Chrome, Safari and Opera */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
-}
-
-.view-item-modal::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .view-item-modal .modal-header {
   border-radius: 12px 12px 0 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-shrink: 0;
 }
 
 .view-item-modal .modal-body {
   background: #f8f9fa;
-  /* Hide scrollbar for Chrome, Safari and Opera */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  /* Custom scrollbar styles */
+  scrollbar-width: thin;
+  scrollbar-color: #888 #f1f1f1;
 }
 
 .view-item-modal .modal-body::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+  width: 8px;
+}
+
+.view-item-modal .modal-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.view-item-modal .modal-body::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.view-item-modal .modal-body::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 
 .view-item-modal .modal-footer {
   border-radius: 0 0 12px 12px;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  flex-shrink: 0;
 }
 
 /* Smooth transitions for view modal */
 .view-item-modal .modal-content {
   animation: slideUp 0.3s ease-out;
-  /* Hide scrollbar for Chrome, Safari and Opera */
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
-}
-
-.view-item-modal .modal-content::-webkit-scrollbar {
-  display: none; /* Chrome, Safari and Opera */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 @keyframes slideUp {

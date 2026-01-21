@@ -209,7 +209,12 @@ const SellItemV2 = () => {
     const t = setTimeout(async () => {
       setLoading((p) => ({ ...p, itemSearch: true }));
       try {
-        const res = await apiClient.get(`${config.api.itemsSearch}?q=${encodeURIComponent(q)}`);
+        const res = await apiClient.get(config.api.itemsSearch, {
+          params: { 
+            q: q,
+            include_purchase_rate: undefined // Selling doesn't need purchase_rate
+          }
+        });
         if (!mounted) return;
         setItemSuggestions(res.data.items || []);
         setShowItemSuggest(true);
@@ -253,8 +258,15 @@ const SellItemV2 = () => {
     setCartItems((prev) => {
       const existing = prev.find((x) => x.item_id === item.id);
       if (existing) {
-        return prev.map((x) => (x.item_id === item.id ? { ...x, quantity: (parseFloat(x.quantity) || 0) + 1 } : x));
+        // If item already exists, increment quantity by 1
+        return prev.map((x) => (x.item_id === item.id ? { ...x, quantity: Math.max(1, (parseFloat(x.quantity) || 0) + 1) } : x));
       }
+      // Extract quantity separately to avoid using item.quantity (which is stock) as cart quantity
+      const { quantity: stockQuantity, current_quantity: currentStockQuantity, ...itemWithoutQuantity } = item;
+      const availableStock = currentStockQuantity !== undefined && currentStockQuantity !== null 
+        ? parseInt(currentStockQuantity) 
+        : (stockQuantity !== undefined && stockQuantity !== null ? parseInt(stockQuantity) : 0);
+      
       return [
         ...prev,
         {
@@ -264,9 +276,9 @@ const SellItemV2 = () => {
           brand: item.brand,
           hsn_number: item.hsn_number || '',
           tax_rate: item.tax_rate || 0,
-          available_quantity: item.quantity || 0,
+          available_quantity: availableStock, // Store stock as available_quantity
           sale_rate: parseFloat(item.sale_rate) || 0,
-          quantity: 1,
+          quantity: 1, // Always start with quantity 1 for new items
           discount_type: 'percentage',
           discount_percentage: null,
           discount: 0
@@ -599,7 +611,14 @@ const SellItemV2 = () => {
                             <div
                               key={it.id}
                               className={`sell2-suggest-item ${selected ? 'selected' : ''}`}
-                              onClick={() => addItemToCart(it)}
+                              onClick={(e) => {
+                                // Only add if clicking on the div itself, not the checkbox
+                                // Check if item is already in cart to avoid double-adding
+                                const isInCart = cartItems.some(cartItem => cartItem.item_id === it.id);
+                                if (e.target.type !== 'checkbox' && !isInCart) {
+                                  addItemToCart(it);
+                                }
+                              }}
                               role="option"
                               aria-selected={selected}
                             >
@@ -610,7 +629,14 @@ const SellItemV2 = () => {
                                   e.stopPropagation();
                                   toggleSuggestion(it.id);
                                 }}
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Add to cart when checkbox is clicked (if not already in cart)
+                                  const isInCart = cartItems.some(cartItem => cartItem.item_id === it.id);
+                                  if (!selected && !isInCart) {
+                                    addItemToCart(it);
+                                  }
+                                }}
                               />
                               <div>
                                 <p className="sell2-suggest-title">

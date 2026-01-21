@@ -6,6 +6,8 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { getLocalDateString } from '../utils/dateUtils';
 import * as XLSX from 'xlsx';
+import Pagination from '../components/Pagination';
+import TransactionLoader from '../components/TransactionLoader';
 import './Report.css';
 
 const ItemWiseSellReport = () => {
@@ -22,6 +24,9 @@ const ItemWiseSellReport = () => {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
+  
+  // Use ref to track and cancel previous requests
+  const abortControllerRef = useRef(null);
 
   // Debounce itemQuery for auto-search
   useEffect(() => {
@@ -67,17 +72,41 @@ const ItemWiseSellReport = () => {
     if (!validateDates()) {
       return;
     }
+    
+    // Cancel previous request if it exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     try {
       setLoading(true);
-      const response = await apiClient.get(config.api.itemWiseSalesReport, { params });
-      setRows(response.data.items || []);
-      setSummary(response.data.summary || null);
-      setPagination(response.data.pagination || null);
+      const response = await apiClient.get(config.api.itemWiseSalesReport, { 
+        params,
+        signal: abortController.signal
+      });
+      
+      // Only update state if request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setRows(response.data.items || []);
+        setSummary(response.data.summary || null);
+        setPagination(response.data.pagination || null);
+      }
     } catch (error) {
+      // Ignore abort errors
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
       console.error('Error fetching item-wise sales report:', error);
       alert('Error fetching item-wise sales report');
     } finally {
-      setLoading(false);
+      // Only update loading state if this is still the current request
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
@@ -153,21 +182,28 @@ const ItemWiseSellReport = () => {
     if (validateDates()) {
       fetchReport();
     }
+    // Cleanup: cancel request on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.from_date, params.to_date, params.gst_filter, params.item_query, params.page, params.limit]);
 
   return (
     <Layout>
+      <TransactionLoader isLoading={loading} type="transaction" message="Loading item-wise sales report..." />
       <div className="report">
         <div className="report-header">
           <h2>Item-wise Sell Report</h2>
           <button 
             onClick={exportToExcel} 
             className="btn btn-success"
-            disabled={rows.length === 0}
+            disabled={rows.length === 0 || loading}
             style={{
-              opacity: rows.length === 0 ? 0.6 : 1,
-              cursor: rows.length === 0 ? 'not-allowed' : 'pointer'
+              opacity: (rows.length === 0 || loading) ? 0.6 : 1,
+              cursor: (rows.length === 0 || loading) ? 'not-allowed' : 'pointer'
             }}
           >
             Export to Excel
@@ -324,26 +360,18 @@ const ItemWiseSellReport = () => {
                 )}
               </tbody>
             </table>
-            {pagination && pagination.totalPages > 1 && (
-              <div className="pagination" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
-                <button 
-                  onClick={() => setPage(p => Math.max(1, p - 1))} 
-                  disabled={page === 1}
-                  className="btn btn-secondary"
-                >
-                  Previous
-                </button>
-                <span>
-                  Page {pagination.page} of {pagination.totalPages} ({pagination.totalRecords} total records)
-                </span>
-                <button 
-                  onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} 
-                  disabled={page === pagination.totalPages}
-                  className="btn btn-secondary"
-                >
-                  Next
-                </button>
-              </div>
+            {pagination && !loading && (
+              <Pagination
+                currentPage={page}
+                totalPages={pagination.totalPages}
+                onPageChange={(newPage) => {
+                  if (!loading) {
+                    setPage(newPage);
+                  }
+                }}
+                totalRecords={pagination.totalRecords}
+                showTotalRecords={true}
+              />
             )}
           </div>
         )}

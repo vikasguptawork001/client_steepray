@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Layout from '../components/Layout';
 import apiClient from '../config/axios';
 import config from '../config/config';
 import { getLocalDateString } from '../utils/dateUtils';
 import * as XLSX from 'xlsx';
+import Pagination from '../components/Pagination';
+import TransactionLoader from '../components/TransactionLoader';
 import './OrderSheet.css';
 
 const OrderSheet = () => {
@@ -13,24 +15,54 @@ const OrderSheet = () => {
   const [limit, setLimit] = useState(50);
   const [pagination, setPagination] = useState(null);
   const [exporting, setExporting] = useState(false);
+  
+  // Use ref to track and cancel previous requests
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     fetchOrders();
+    // Cleanup: cancel request on unmount
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, limit]);
 
   const fetchOrders = async () => {
+    // Cancel previous request if it exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     try {
       setLoading(true);
       const response = await apiClient.get(config.api.orders, {
-        params: { page, limit }
+        params: { page, limit },
+        signal: abortController.signal
       });
-      setOrders(response.data.orders);
-      setPagination(response.data.pagination);
+      
+      // Only update state if request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setOrders(response.data.orders);
+        setPagination(response.data.pagination);
+      }
     } catch (error) {
+      // Ignore abort errors
+      if (error.name === 'CanceledError' || error.name === 'AbortError') {
+        return;
+      }
       console.error('Error fetching orders:', error);
     } finally {
-      setLoading(false);
+      // Only update loading state if this is still the current request
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
@@ -100,16 +132,17 @@ const OrderSheet = () => {
 
   return (
     <Layout>
+      <TransactionLoader isLoading={loading} type="transaction" message="Loading order sheet..." />
       <div className="order-sheet">
         <div className="order-header">
           <h2>Order Sheet</h2>
           <button 
             onClick={exportToExcel} 
             className="btn btn-success"
-            disabled={exporting || orders.length === 0}
+            disabled={exporting || orders.length === 0 || loading}
             style={{
-              opacity: (exporting || orders.length === 0) ? 0.6 : 1,
-              cursor: (exporting || orders.length === 0) ? 'not-allowed' : 'pointer'
+              opacity: (exporting || orders.length === 0 || loading) ? 0.6 : 1,
+              cursor: (exporting || orders.length === 0 || loading) ? 'not-allowed' : 'pointer'
             }}
           >
             {exporting ? 'Exporting...' : 'Export to Excel'}
@@ -179,26 +212,18 @@ const OrderSheet = () => {
                 )}
               </tbody>
             </table>
-            {pagination && pagination.totalPages > 1 && (
-              <div className="pagination" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
-                <button 
-                  onClick={() => setPage(p => Math.max(1, p - 1))} 
-                  disabled={page === 1}
-                  className="btn btn-secondary"
-                >
-                  Previous
-                </button>
-                <span>
-                  Page {pagination.page} of {pagination.totalPages} ({pagination.totalRecords} total records)
-                </span>
-                <button 
-                  onClick={() => setPage(p => Math.min(pagination.totalPages, p + 1))} 
-                  disabled={page === pagination.totalPages}
-                  className="btn btn-secondary"
-                >
-                  Next
-                </button>
-              </div>
+            {pagination && !loading && (
+              <Pagination
+                currentPage={page}
+                totalPages={pagination.totalPages}
+                onPageChange={(newPage) => {
+                  if (!loading) {
+                    setPage(newPage);
+                  }
+                }}
+                totalRecords={pagination.totalRecords}
+                showTotalRecords={true}
+              />
             )}
           </div>
         )}
