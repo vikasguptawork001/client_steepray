@@ -711,16 +711,16 @@ const Dashboard = () => {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>S.No</th>
-                    <th>Product Name</th>
-                    <th>Brand</th>
-                    <th>HSN</th>
-                    <th>Tax Rate</th>
-                    <th>Sale Rate</th>
-                    <th>Remarks</th>
-                    <th>Quantity</th>
-                    <th>Rack No</th>
-                    <th>Actions</th>
+                    <th style={{ textAlign: 'left' }}>S.No</th>
+                    <th style={{ textAlign: 'left' }}>Product Name</th>
+                    <th style={{ textAlign: 'left' }}>Brand</th>
+                    <th style={{ textAlign: 'left' }}>HSN</th>
+                    <th style={{ textAlign: 'right' }}>Tax Rate</th>
+                    <th style={{ textAlign: 'right' }}>Sale Rate</th>
+                    <th style={{ textAlign: 'left' }}>Remarks</th>
+                    <th style={{ textAlign: 'right' }}>Quantity</th>
+                    <th style={{ textAlign: 'left' }}>Rack No</th>
+                    <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -733,14 +733,15 @@ const Dashboard = () => {
                   ) : (
                     items.map((item, index) => (
                       <tr key={item.id}>
-                        <td>{(page - 1) * limit + index + 1}</td>
-                        <td>{item.product_name}</td>
-                        <td>{item.brand}</td>
-                        <td>{item.hsn_number}</td>
-                        <td>{item.tax_rate}%</td>
-                        <td>₹{item.sale_rate}</td>
+                        <td style={{ textAlign: 'left' }}>{(page - 1) * limit + index + 1}</td>
+                        <td style={{ textAlign: 'left' }}>{item.product_name}</td>
+                        <td style={{ textAlign: 'left' }}>{item.brand}</td>
+                        <td style={{ textAlign: 'left' }}>{item.hsn_number}</td>
+                        <td style={{ textAlign: 'right' }}>{item.tax_rate}%</td>
+                        <td style={{ textAlign: 'right' }}>₹{item.sale_rate}</td>
                         <td 
                           style={{ 
+                            textAlign: 'left',
                             maxWidth: '200px', 
                             overflow: 'hidden', 
                             textOverflow: 'ellipsis', 
@@ -751,9 +752,9 @@ const Dashboard = () => {
                         >
                           {item.remarks || '-'}
                         </td>
-                        <td>{item.quantity}</td>
-                        <td>{item.rack_number}</td>
-                        <td>
+                        <td style={{ textAlign: 'right' }}>{item.quantity}</td>
+                        <td style={{ textAlign: 'left' }}>{item.rack_number}</td>
+                        <td style={{ textAlign: 'center', padding: '8px 4px', display: 'table-cell', verticalAlign: 'middle' }}>
                           <ActionMenu
                             itemId={item.id}
                             itemName={item.product_name}

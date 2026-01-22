@@ -922,7 +922,19 @@ const SellItem = () => {
                           type="number"
                           step="any"
                           value={item.quantity === '' ? '' : item.quantity}
-                          onChange={(e) => updateQuantityInPreview(item.item_id, e.target.value)}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            // Only allow digits and empty string
+                            // Block mathematical signs: +, -, *, /, e, E, decimal point
+                            if (val !== '' && !/^\d+$/.test(val)) return;
+                            updateQuantityInPreview(item.item_id, val);
+                          }}
+                          onKeyDown={(e) => {
+                            // Block mathematical signs, 'e', 'E', and decimal point
+                            if (['+', '-', '*', '/', 'e', 'E', '.', ','].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
                           onBlur={(e) => {
                             // When user leaves the field, ensure it has a valid value
                             const val = e.target.value;
@@ -960,6 +972,11 @@ const SellItem = () => {
                             value={item.discount_type === 'percentage' ? (item.discount_percentage !== null && item.discount_percentage !== undefined && item.discount_percentage !== 0 ? item.discount_percentage : '') : ''}
                                   onChange={(e) => {
                               const inputVal = e.target.value;
+                              // Only allow digits, decimal point, and empty string
+                              // Block mathematical signs: +, -, *, /, e, E
+                              if (inputVal !== '' && !/^[\d.]*$/.test(inputVal)) return;
+                              // Prevent multiple decimal points
+                              if ((inputVal.match(/\./g) || []).length > 1) return;
                               // Allow empty string to be set (user can delete 0)
                               if (inputVal === '') {
                                 dispatch(updatePreviewItemDiscount({
@@ -980,6 +997,12 @@ const SellItem = () => {
                                 discountType: 'percentage',
                                 discountPercentage: Math.min(100, Math.max(0, val))
                               }));
+                                  }}
+                                  onKeyDown={(e) => {
+                              // Block mathematical signs and 'e', 'E'
+                              if (['+', '-', '*', '/', 'e', 'E'].includes(e.key)) {
+                                e.preventDefault();
+                              }
                                   }}
                                   onBlur={(e) => {
                               const inputVal = e.target.value;
@@ -2307,7 +2330,19 @@ const SellItem = () => {
                             type="number"
                             step="any"
                             value={item.quantity === '' ? '' : item.quantity}
-                            onChange={(e) => handleUpdateQuantity(item.item_id, e.target.value)}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              // Only allow digits and empty string
+                              // Block mathematical signs: +, -, *, /, e, E, decimal point
+                              if (val !== '' && !/^\d+$/.test(val)) return;
+                              handleUpdateQuantity(item.item_id, val);
+                            }}
+                            onKeyDown={(e) => {
+                              // Block mathematical signs, 'e', 'E', and decimal point
+                              if (['+', '-', '*', '/', 'e', 'E', '.', ','].includes(e.key)) {
+                                e.preventDefault();
+                              }
+                            }}
                             onBlur={(e) => {
                               const val = e.target.value;
                               if (val === '' || parseInt(val) <= 0) {
@@ -2331,7 +2366,7 @@ const SellItem = () => {
                           <td style={{ textAlign: 'right', fontWeight: '700', color: '#2c3e50', fontSize: '15px' }}>
                             ₹{(parseFloat(item.sale_rate || 0) * parseInt(item.quantity || 0)).toFixed(2)}
                           </td>
-                          <td style={{ textAlign: 'center' }}>
+                          <td style={{ textAlign: 'center', padding: '8px 4px', display: 'table-cell', verticalAlign: 'middle' }}>
                             <ActionMenu
                               itemId={item.item_id}
                               itemName={item.product_name}

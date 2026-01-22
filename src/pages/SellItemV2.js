@@ -764,11 +764,23 @@ const SellItemV2 = () => {
                                   </select>
                                   {it.discount_type === 'percentage' ? (
                                     <input
+                                      onKeyDown={(e) => {
+                                        // Block mathematical signs and 'e', 'E'
+                                        if (['+', '-', '*', '/', 'e', 'E'].includes(e.key)) {
+                                          e.preventDefault();
+                                        }
+                                      }}
                                       className="sell2-mini-input"
                                       style={{ width: 90 }}
                                       value={it.discount_percentage ?? ''}
                                       onChange={(e) => {
-                                        const pct = parseFloat(e.target.value) || 0;
+                                        const val = e.target.value;
+                                        // Only allow digits, decimal point, and empty string
+                                        // Block mathematical signs: +, -, *, /, e, E
+                                        if (val !== '' && !/^[\d.]*$/.test(val)) return;
+                                        // Prevent multiple decimal points
+                                        if ((val.match(/\./g) || []).length > 1) return;
+                                        const pct = val === '' ? null : (parseFloat(val) || 0);
                                         updateCartItem(it.item_id, { discount_percentage: pct });
                                       }}
                                       inputMode="decimal"
@@ -780,7 +792,13 @@ const SellItemV2 = () => {
                                       style={{ width: 110 }}
                                       value={it.discount ?? ''}
                                       onChange={(e) => {
-                                        const disc = parseFloat(e.target.value) || 0;
+                                        const val = e.target.value;
+                                        // Only allow digits, decimal point, and empty string
+                                        // Block mathematical signs: +, -, *, /, e, E
+                                        if (val !== '' && !/^[\d.]*$/.test(val)) return;
+                                        // Prevent multiple decimal points
+                                        if ((val.match(/\./g) || []).length > 1) return;
+                                        const disc = val === '' ? null : (parseFloat(val) || 0);
                                         updateCartItem(it.item_id, { discount: disc });
                                       }}
                                       inputMode="decimal"

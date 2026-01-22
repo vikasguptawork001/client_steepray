@@ -340,18 +340,18 @@ const SellReport = () => {
                 ) : (
                   transactions.map((txn) => (
                     <tr key={txn.id}>
-                      <td>{new Date(txn.created_at).toLocaleString()}</td>
-                      <td>{txn.bill_number}</td>
-                      <td>{txn.party_name}</td>
-                      <td>₹{parseFloat(txn.total_amount).toFixed(2)}</td>
-                      <td>₹{parseFloat(txn.paid_amount).toFixed(2)}</td>
-                      <td>₹{parseFloat(txn.balance_amount).toFixed(2)}</td>
-                      <td>
+                      <td style={{ textAlign: 'left' }}>{new Date(txn.created_at).toLocaleString()}</td>
+                      <td style={{ textAlign: 'left' }}>{txn.bill_number}</td>
+                      <td style={{ textAlign: 'left' }}>{txn.party_name}</td>
+                      <td style={{ textAlign: 'right' }}>₹{parseFloat(txn.total_amount).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{parseFloat(txn.paid_amount).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{parseFloat(txn.balance_amount).toFixed(2)}</td>
+                      <td style={{ textAlign: 'center' }}>
                         <span className={`status-badge ${txn.payment_status}`}>
                           {txn.payment_status.replace('_', ' ').toUpperCase()}
                         </span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'center' }}>
                         <span className={`status-badge ${txn.with_gst ? 'with-gst' : 'without-gst'}`}>
                           {txn.with_gst ? 'GST' : 'Non-GST'}
                         </span>
@@ -469,13 +469,13 @@ const SellReport = () => {
                           <table className="table" style={{ width: '100%', fontSize: '14px', borderCollapse: 'collapse' }}>
                             <thead>
                               <tr style={{ background: '#f8f9fa' }}>
-                                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>S.No</th>
+                                <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>S.No</th>
                                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Product Name</th>
                                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Product Code</th>
                                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>Brand</th>
                                 <th style={{ padding: '12px', textAlign: 'left', fontWeight: '600' }}>HSN</th>
-                                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Tax Rate</th>
-                                <th style={{ padding: '12px', textAlign: 'center', fontWeight: '600' }}>Qty</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Tax Rate</th>
+                                <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Qty</th>
                                 <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Sale Rate</th>
                                 <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Discount</th>
                                 <th style={{ padding: '12px', textAlign: 'right', fontWeight: '600' }}>Gross</th>
@@ -487,13 +487,13 @@ const SellReport = () => {
                             <tbody>
                               {billDetails.items.map((item, index) => (
                                 <tr key={item.item_id} style={{ borderBottom: '1px solid #e9ecef' }}>
-                                  <td style={{ padding: '12px', textAlign: 'center', verticalAlign: 'middle' }}>{index + 1}</td>
+                                  <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{index + 1}</td>
                                   <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.product_name}</td>
                                   <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.product_code || '-'}</td>
                                   <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.brand || '-'}</td>
                                   <td style={{ padding: '12px', textAlign: 'left', verticalAlign: 'middle' }}>{item.hsn_number || '-'}</td>
-                                  <td style={{ padding: '12px', textAlign: 'center', verticalAlign: 'middle' }}>{item.tax_rate !== null && item.tax_rate !== undefined ? `${item.tax_rate}%` : '0%'}</td>
-                                  <td style={{ padding: '12px', textAlign: 'center', verticalAlign: 'middle' }}>{item.quantity !== null && item.quantity !== undefined ? item.quantity : '0'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle' }}>{item.tax_rate !== null && item.tax_rate !== undefined ? `${item.tax_rate}%` : '0%'}</td>
+                                  <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle' }}>{item.quantity !== null && item.quantity !== undefined ? item.quantity : '0'}</td>
                                   <td style={{ padding: '12px', textAlign: 'right', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums' }}>₹{item.sale_rate !== null && item.sale_rate !== undefined 
                                     ? Math.round(parseFloat(item.sale_rate) * 100) / 100 
                                     : '0.00'}</td>

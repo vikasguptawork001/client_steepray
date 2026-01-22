@@ -221,10 +221,8 @@
   vertical-align: middle;
 }
 
-.table td:last-child {
-  text-align: center;
-  padding: 8px 16px;
-}
+/* Removed: This was forcing all last columns to center, which conflicts with right-aligned numeric columns */
+/* Individual pages should set alignment via inline styles */
 
 .table tbody tr {
   transition: background-color 0.15s ease;
@@ -238,14 +236,18 @@
   border-bottom: none;
 }
 
-/* Action Menu Alignment in Table */
-.table td:last-child {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 40px;
-  width: 100px;
-  padding: 8px 16px;
+/* Action Menu Alignment in Table - Only apply to columns with action menus */
+/* Note: Inline styles in JSX will override this for non-action columns */
+.table td:last-child .action-menu-wrapper {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  text-align: center !important;
+}
+
+/* Only center last column if it contains an action menu */
+/* For columns without action menus, inline styles will take precedence */
+.table td:last-child:not([style*="text-align: left"]):not([style*="text-align: right"]) .action-menu-wrapper {
+  margin: 0 auto;
 }
 
 /* Numeric columns alignment */

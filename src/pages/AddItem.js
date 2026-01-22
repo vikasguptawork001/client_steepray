@@ -218,6 +218,8 @@ const AddItem = () => {
             };
           } else {
             // Add new item to cart - use search data which now includes purchase_rate
+            // Note: current_quantity should be the actual stock from the database
+            // The quantity field is the purchase quantity (how many we're buying)
             updatedItems.push({
               item_id: itemDetails.id,
               product_name: itemDetails.product_name,
@@ -227,11 +229,11 @@ const AddItem = () => {
               tax_rate: finalTaxRate,
               sale_rate: parseFloat(itemDetails.sale_rate) || 0,
               purchase_rate: parseFloat(itemDetails.purchase_rate) || 0,
-              quantity: 1,
+              quantity: 1, // Purchase quantity (how many we're buying) - starts at 1
               alert_quantity: 0, // Will be set when submitting
               rack_number: '', // Will be set when submitting
               remarks: '', // Will be set when submitting
-              current_quantity: parseInt(itemDetails.quantity) || 0
+              current_quantity: parseInt(itemDetails.quantity) || 0 // Actual stock from database
             });
           }
           successCount++;
@@ -279,6 +281,8 @@ const AddItem = () => {
         ));
       } else {
         // Add item using search data (which includes purchase_rate)
+        // Note: current_quantity should be the actual stock from the database
+        // The quantity field is the purchase quantity (how many we're buying)
         setSelectedItems(prev => [...prev, {
           item_id: item.id,
           product_name: item.product_name,
@@ -288,11 +292,11 @@ const AddItem = () => {
           tax_rate: finalTaxRate, // Use the parsed and validated tax rate
           sale_rate: parseFloat(item.sale_rate) || 0,
           purchase_rate: parseFloat(item.purchase_rate) || 0,
-          quantity: 1, // Only this field will be editable
+          quantity: 1, // Purchase quantity (how many we're buying) - starts at 1
           alert_quantity: 0, // Will be set when submitting
           rack_number: '', // Will be set when submitting
           remarks: '', // Will be set when submitting
-          current_quantity: parseInt(item.quantity) || 0 // Store current quantity for reference
+          current_quantity: parseInt(item.quantity) || 0 // Actual stock from database (for reference only)
         }]);
       }
       
@@ -389,13 +393,14 @@ const AddItem = () => {
       const createdItemResponse = await apiClient.get(`${config.api.items}/${response.data.id}`);
       const createdItem = createdItemResponse.data.item;
       
-      // Add item to cart with the specified quantity
-      const itemQuantity = parseInt(newItem.quantity) || 1;
+      // Add item to cart
+      // For existing items in cart, increment the editable quantity by 1
+      const itemQuantity = parseInt(newItem.quantity) || 1; // This is the quantity entered when creating the item
       const existingItem = selectedItems.find(i => i.item_id === createdItem.id);
       if (existingItem) {
-        // If item already in cart, increment quantity
+        // If item already in cart, increment the editable quantity by 1
         setSelectedItems(selectedItems.map(i =>
-          i.item_id === createdItem.id ? { ...i, quantity: i.quantity + itemQuantity } : i
+          i.item_id === createdItem.id ? { ...i, quantity: i.quantity + 1 } : i
         ));
       } else {
         // Parse tax_rate
@@ -407,7 +412,10 @@ const AddItem = () => {
           ? taxRateValue 
           : 18;
         
-        // Add new item to cart with specified quantity
+        // Add new item to cart
+        // Note: current_quantity should be the quantity from API (or the entered quantity for new items)
+        // The quantity field (editable in table) should default to 1
+        const apiQuantity = parseInt(createdItem.quantity) || itemQuantity; // Use API quantity or entered quantity
         setSelectedItems([...selectedItems, {
           item_id: createdItem.id,
           product_name: createdItem.product_name,
@@ -417,11 +425,11 @@ const AddItem = () => {
           tax_rate: finalTaxRate,
           sale_rate: parseFloat(createdItem.sale_rate) || 0,
           purchase_rate: parseFloat(createdItem.purchase_rate) || 0,
-          quantity: itemQuantity,
+          quantity: 1, // Editable quantity in table - defaults to 1
           alert_quantity: parseInt(createdItem.alert_quantity) || 0,
           rack_number: createdItem.rack_number || '',
           remarks: createdItem.remarks || '',
-          current_quantity: parseInt(createdItem.quantity) || 0
+          current_quantity: apiQuantity // Current stock from API (or entered quantity for new items)
         }]);
       }
       
@@ -893,6 +901,11 @@ const AddItem = () => {
                         <strong>Sale Rate:</strong> ₹{parseFloat(newItem.sale_rate).toFixed(2)}
                       </div>
                     )}
+                    {newItem.quantity > 0 && (
+                      <div>
+                        <strong>Quantity:</strong> {newItem.quantity}
+                      </div>
+                    )}
                     {newItem.sale_rate > 0 && newItem.purchase_rate > 0 && (
                       <div style={{
                         gridColumn: '1 / -1',
@@ -974,41 +987,41 @@ const AddItem = () => {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Product Name</th>
-                    <th>Product Code</th>
-                    <th>Brand</th>
-                    <th>HSN</th>
-                    <th>Purchase Rate</th>
-                    <th>Tax Rate</th>
-                    <th>Sale Rate</th>
-                    <th>Quantity</th>
+                    <th style={{ textAlign: 'left' }}>Product Name</th>
+                    <th style={{ textAlign: 'left' }}>Product Code</th>
+                    <th style={{ textAlign: 'left' }}>Brand</th>
+                    <th style={{ textAlign: 'left' }}>HSN</th>
+                    <th style={{ textAlign: 'right' }}>Purchase Rate</th>
+                    <th style={{ textAlign: 'right' }}>Tax Rate</th>
+                    <th style={{ textAlign: 'right' }}>Sale Rate</th>
+                    <th style={{ textAlign: 'right' }}>Quantity</th>
 
-                    <th>Action</th>
+                    <th style={{ textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selectedItems.map((item, index) => (
                     <tr key={index}>
-                      <td>{item.product_name}</td>
-                      <td>
+                      <td style={{ textAlign: 'left' }}>{item.product_name}</td>
+                      <td style={{ textAlign: 'left' }}>
                         <span style={{ padding: '5px', display: 'inline-block' }}>{item.product_code || '-'}</span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'left' }}>
                         <span style={{ padding: '5px', display: 'inline-block' }}>{item.brand || '-'}</span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'left' }}>
                         <span style={{ padding: '5px', display: 'inline-block' }}>{item.hsn_number || '-'}</span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'right' }}>
                         <span style={{ padding: '5px', display: 'inline-block' }}>₹{parseFloat(item.purchase_rate || 0).toFixed(2)}</span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'right' }}>
                         <span style={{ padding: '5px', display: 'inline-block' }}>{item.tax_rate || 0}%</span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'right' }}>
                         <span style={{ padding: '5px', display: 'inline-block' }}>₹{parseFloat(item.sale_rate || 0).toFixed(2)}</span>
                       </td>
-                      <td>
+                      <td style={{ textAlign: 'right' }}>
                         <input
                           type="number"
                           min="1"
@@ -1030,7 +1043,7 @@ const AddItem = () => {
                         )}
                       </td>
 
-                      <td>
+                      <td style={{ textAlign: 'center', padding: '8px 4px', display: 'table-cell', verticalAlign: 'middle' }}>
                         <ActionMenu
                           itemId={item.item_id}
                           itemName={item.product_name}

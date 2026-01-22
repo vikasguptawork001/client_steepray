@@ -40,6 +40,11 @@ const Parties = () => {
   const [transactionDetails, setTransactionDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [processingPayment, setProcessingPayment] = useState(false);
+  // Receipt modal state
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
   // Edit and Delete states
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingParty, setEditingParty] = useState(null);
@@ -365,15 +370,27 @@ const Parties = () => {
       
       toast.success(`Payment of ₹${parseFloat(paymentAmount).toFixed(2)} recorded successfully!`);
       
-      // Download PDF receipt (if receipt endpoint exists)
-      if (paymentTransactionId) {
+      // Show receipt modal for seller payments
+      if (paymentTransactionId && selectedParty.party_type === 'seller') {
+        setReceiptData({
+          transactionId: paymentTransactionId,
+          receiptNumber: receiptNumber || paymentTransactionId,
+          partyType: selectedParty.party_type,
+          amount: parseFloat(paymentAmount),
+          partyName: selectedParty.party_name,
+          paymentMethod: paymentMethod,
+          paymentNotes: paymentNotes,
+          date: getLocalDateString()
+        });
+        setShowReceiptModal(true);
+      } else if (paymentTransactionId && selectedParty.party_type === 'buyer') {
+        // For buyer payments, auto-download (existing behavior)
         try {
           const pdfResponse = await apiClient.get(
             `/api/bills/payment/${paymentTransactionId}/pdf?party_type=${selectedParty.party_type}`,
             { responseType: 'blob' }
           );
           
-          // Create blob URL and download
           const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
           const url = window.URL.createObjectURL(blob);
           const link = document.createElement('a');
@@ -387,7 +404,6 @@ const Parties = () => {
           toast.success('Payment receipt downloaded!');
         } catch (pdfError) {
           console.error('Error downloading receipt:', pdfError);
-          // Don't show error - receipt download is optional
         }
       }
       
@@ -410,6 +426,77 @@ const Parties = () => {
     }
   };
 
+  const handleDownloadReceipt = async () => {
+    if (!receiptData || downloadingReceipt) return;
+    
+    setDownloadingReceipt(true);
+    try {
+      const pdfResponse = await apiClient.get(
+        `/api/bills/payment/${receiptData.transactionId}/receipt?party_type=${receiptData.partyType}`,
+        { responseType: 'blob' }
+      );
+      
+      const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `payment_receipt_${receiptData.receiptNumber || receiptData.transactionId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Receipt downloaded successfully!');
+    } catch (error) {
+      console.error('Error downloading receipt:', error);
+      toast.error('Failed to download receipt: ' + (error.response?.data?.error || 'Unknown error'));
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
+
+  const handlePrintReceipt = async () => {
+    if (!receiptData || printingReceipt) return;
+    
+    setPrintingReceipt(true);
+    try {
+      const pdfResponse = await apiClient.get(
+        `/api/bills/payment/${receiptData.transactionId}/receipt?party_type=${receiptData.partyType}`,
+        { responseType: 'blob' }
+      );
+      
+      const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const printWindow = window.open(url, '_blank');
+      
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      } else {
+        // Fallback: create iframe for printing
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        iframe.onload = () => {
+          iframe.contentWindow.print();
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+            window.URL.revokeObjectURL(url);
+          }, 1000);
+        };
+      }
+      
+      toast.success('Receipt opened for printing!');
+    } catch (error) {
+      console.error('Error printing receipt:', error);
+      toast.error('Failed to print receipt: ' + (error.response?.data?.error || 'Unknown error'));
+    } finally {
+      setPrintingReceipt(false);
+    }
+  };
+
   return (
     <Layout>
       <TransactionLoader isLoading={processingPayment} type="payment" />
@@ -417,12 +504,12 @@ const Parties = () => {
         <div className="parties-header">
           <h2>Parties</h2>
           <div className="header-actions">
-            {(filter === 'all' || filter === 'buyer') && (
+            {(filter === 'all' || filter === 'buyer') && user?.role !== 'sales' && (
             <Link to="/add-buyer-party" className="btn btn-primary">
               + Add Buyer Party
             </Link>
             )}
-            {(filter === 'all' || filter === 'seller') && (
+            {(filter === 'all' || filter === 'seller') && user?.role !== 'sales' && (
             <Link to="/add-seller-party" className="btn btn-success">
               + Add Seller Party
             </Link>
@@ -560,40 +647,41 @@ const Parties = () => {
                 <table className="table">
                   <thead style={{ backgroundColor: '#34495e', color: '#ffffff' }}>
                     <tr>
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>S.No</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>S.No</th>
                       {filter === 'all' && (
-                        <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Type</th>
+                        <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Type</th>
                       )}
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Party Name</th>
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Mobile</th>
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Email</th>
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Address</th>
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>GST Number</th>
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Balance Amount</th>
-                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600' }}>Actions</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Party Name</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Mobile</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Email</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Address</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>GST Number</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Balance Amount</th>
+                      <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredParties.map((party, index) => (
                       <tr key={`${party.party_type}-${party.id}`}>
-                        <td>{index + 1}</td>
+                        <td style={{ textAlign: 'center' }}>{index + 1}</td>
                         {filter === 'all' && (
-                        <td>
+                        <td style={{ textAlign: 'center' }}>
                           <span className={`party-type-badge ${party.party_type}`}>
                             {party.party_type === 'buyer' ? 'Buyer' : 'Seller'}
                           </span>
                         </td>
                         )}
-                        <td style={{ fontWeight: '600' }}>{party.party_name}</td>
-                        <td>{party.mobile_number || '-'}</td>
-                        <td>{party.email || '-'}</td>
-                        <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <td style={{ fontWeight: '600', textAlign: 'center' }}>{party.party_name}</td>
+                        <td style={{ textAlign: 'center' }}>{party.mobile_number || '-'}</td>
+                        <td style={{ textAlign: 'center' }}>{party.email || '-'}</td>
+                        <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
                           {party.address || '-'}
                         </td>
-                        <td>{party.gst_number || '-'}</td>
+                        <td style={{ textAlign: 'center' }}>{party.gst_number || '-'}</td>
                         <td style={{ 
                           fontWeight: '600',
-                          color: parseFloat(party.balance_amount || 0) > 0 ? '#d32f2f' : '#388e3c'
+                          color: parseFloat(party.balance_amount || 0) > 0 ? '#d32f2f' : '#388e3c',
+                          textAlign: 'center'
                         }}>
                           ₹{parseFloat(party.balance_amount || 0).toFixed(2)}
                         </td>
@@ -684,28 +772,28 @@ const Parties = () => {
                   Party Information
                 </h4>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>Party Name:</strong> {partyDetails.party_name}
                   </div>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>Type:</strong> {selectedParty.party_type === 'buyer' ? 'Buyer' : 'Seller'}
                   </div>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>Mobile:</strong> {partyDetails.mobile_number || 'N/A'}
                   </div>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>Email:</strong> {partyDetails.email || 'N/A'}
                   </div>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>GST Number:</strong> {partyDetails.gst_number || 'N/A'}
                   </div>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>Address:</strong> {partyDetails.address || 'N/A'}
                   </div>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>Opening Balance:</strong> ₹{parseFloat(partyDetails.opening_balance || 0).toFixed(2)}
                   </div>
-                  <div>
+                  <div style={{ textAlign: 'center' }}>
                     <strong>Current Balance:</strong> 
                     <span style={{ 
                       color: parseFloat(partyDetails.balance_amount || 0) > 0 ? '#d32f2f' : '#388e3c',
@@ -748,23 +836,23 @@ const Parties = () => {
                       <table className="table">
                         <thead style={{ position: 'sticky', top: 0, backgroundColor: '#34495e', color: '#ffffff', zIndex: 10 }}>
                           <tr>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Date</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Payment Type</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Bill/Ref No</th>
-                            {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Description</th> */}
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Previous Amount</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Current Transaction</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Paid Amount</th>
-                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Balance Amount</th>
-                            {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'left', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Status</th> */}
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Date</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Payment Type</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Bill/Ref No</th>
+                            {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Description</th> */}
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Previous Amount</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Current Transaction</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Paid Amount</th>
+                            <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Balance Amount</th>
+                            {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Status</th> */}
                             {/* <th style={{ backgroundColor: '#34495e', color: '#ffffff', padding: '12px', textAlign: 'center', fontWeight: '600', borderBottom: '2px solid #2c3e50' }}>Action</th> */}
                           </tr>
                         </thead>
                         <tbody>
                           {transactionHistory.map((txn, idx) => (
                             <tr key={idx}>
-                             <td>{new Date(txn.transaction_timestamp || txn.created_at).toLocaleString()}</td>
-                              <td>
+                             <td style={{ textAlign: 'center' }}>{new Date(txn.transaction_timestamp || txn.created_at).toLocaleString()}</td>
+                              <td style={{ textAlign: 'center' }}>
                                 <span style={{
                                   padding: '4px 8px',
                                   borderRadius: '4px',
@@ -776,7 +864,7 @@ const Parties = () => {
                                  {txn?.transaction_type}
                                 </span>
                               </td>
-                              <td>{txn.bill_number || txn.id || '-'}</td>
+                              <td style={{ textAlign: 'center' }}>{txn.bill_number || txn.id || '-'}</td>
                               {/* <td>
                                 <div style={{ maxWidth: '250px' }}>
                                   <div style={{ fontWeight: '500', marginBottom: '4px' }}>
@@ -810,7 +898,7 @@ const Parties = () => {
                                   )}
                                 </div>
                               </td> */}
-                              <td>
+                              <td style={{ textAlign: 'center' }}>
                                 <div style={{ fontWeight: '600', color: '#333' }}>
                                   ₹{parseFloat(txn.previous_balance).toFixed(2)}
                                 </div>
@@ -820,7 +908,7 @@ const Parties = () => {
                                   </div>
                                 )} */}
                               </td>
-                              <td>
+                              <td style={{ textAlign: 'center' }}>
                                 {/* {txn.type === 'purchase' || txn.type === 'purchase_payment' ? (
                                   <div>
                                     <div style={{ fontWeight: '600', color: '#2e7d32', marginBottom: '2px' }}>
@@ -841,7 +929,7 @@ const Parties = () => {
                                   ₹{parseFloat(txn.this_transaction_amount).toFixed(2)}
                                 </div>
                               </td>
-                              <td>
+                              <td style={{ textAlign: 'center' }}>
                                 <div style={{ 
                                   fontWeight: (txn.type === 'payment' || txn.type === 'purchase_payment') ? '600' : '500',
                                   color: parseFloat(txn.balance_amount || 0) > 0 ? '#d32f2f' : '#2e7d32'
@@ -849,7 +937,7 @@ const Parties = () => {
                                   ₹{parseFloat(txn.paid_amount).toFixed(2)}
                                 </div>
                               </td>
-                                <td>
+                                <td style={{ textAlign: 'center' }}>
                                 <div >
                                   ₹{parseFloat(txn.balance_after).toFixed(2)}
                                 </div>
@@ -1025,6 +1113,86 @@ const Parties = () => {
         </div>
       )}
 
+      {/* Payment Receipt Modal - For Seller Payments */}
+      {showReceiptModal && receiptData && (
+        <div className="modal-overlay" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowReceiptModal(false);
+            setReceiptData(null);
+          }
+        }}>
+          <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Payment Receipt</h3>
+              <button className="modal-close" onClick={() => {
+                setShowReceiptModal(false);
+                setReceiptData(null);
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '20px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#2c3e50' }}>Payment Successful!</h4>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#28a745' }}>
+                    ₹{receiptData.amount.toFixed(2)}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' }}>
+                  <div>
+                    <strong>Receipt Number:</strong><br />
+                    {receiptData.receiptNumber}
+                  </div>
+                  <div>
+                    <strong>Date:</strong><br />
+                    {receiptData.date}
+                  </div>
+                  <div>
+                    <strong>Party Name:</strong><br />
+                    {receiptData.partyName}
+                  </div>
+                  <div>
+                    <strong>Payment Method:</strong><br />
+                    {receiptData.paymentMethod}
+                  </div>
+                  {receiptData.paymentNotes && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <strong>Notes:</strong><br />
+                      {receiptData.paymentNotes}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setShowReceiptModal(false);
+                  setReceiptData(null);
+                }}
+                className="btn btn-secondary"
+                disabled={downloadingReceipt || printingReceipt}
+              >
+                Close
+              </button>
+              <button
+                onClick={handleDownloadReceipt}
+                className="btn btn-primary"
+                disabled={downloadingReceipt || printingReceipt}
+              >
+                {downloadingReceipt ? 'Downloading...' : '📥 Download Receipt'}
+              </button>
+              <button
+                onClick={handlePrintReceipt}
+                className="btn btn-success"
+                disabled={downloadingReceipt || printingReceipt}
+              >
+                {printingReceipt ? 'Opening...' : '🖨️ Print Receipt'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Transaction Details Modal */}
       {showTransactionDetailsModal && selectedTransaction && (
         <div className="modal-overlay">
@@ -1053,29 +1221,29 @@ const Parties = () => {
                   {/* Transaction Header    */}
                   <div style={{ marginBottom: '30px', padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-                      <div>
+                      <div style={{ textAlign: 'center' }}>
                         <strong>Date & Time:</strong><br />
                         {new Date(transactionDetails.transaction_date || transactionDetails.return_date || transactionDetails.payment_date || transactionDetails.created_at).toLocaleString()}
                       </div>
                       {(transactionDetails.bill_number || transactionDetails.receipt_number) && (
-                        <div>
+                        <div style={{ textAlign: 'center' }}>
                           <strong>{(transactionDetails.type === 'payment' || transactionDetails.type === 'purchase_payment') ? 'Receipt' : 'Bill'} Number:</strong><br />
                           {transactionDetails.bill_number || transactionDetails.receipt_number}
                         </div>
                       )}
                       {transactionDetails.summary && (
                         <>
-                          <div>
+                          <div style={{ textAlign: 'center' }}>
                             <strong>Total Amount:</strong><br />
                             ₹{parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || 0).toFixed(2)}
                           </div>
                           {transactionDetails.type === 'sale' && (
                             <>
-                              <div>
+                              <div style={{ textAlign: 'center' }}>
                                 <strong>Paid Amount:</strong><br />
                                 ₹{parseFloat(transactionDetails.summary.paid_amount || 0).toFixed(2)}
                               </div>
-                              <div>
+                              <div style={{ textAlign: 'center' }}>
                                 <strong>Remaining Balance:</strong><br />
                                 ₹{parseFloat(transactionDetails.summary.balance_amount || 0).toFixed(2)}
                               </div>
@@ -1083,32 +1251,32 @@ const Parties = () => {
                           )}
                           {transactionDetails.type === 'purchase' && (
                             <>
-                              <div>
+                              <div style={{ textAlign: 'center' }}>
                                 <strong>Total Purchase Amount:</strong><br />
                                 <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#1976d2' }}>
                                   ₹{parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || selectedTransaction?.amount || 0).toFixed(2)}
                                 </span>
                               </div>
-                              <div>
+                              <div style={{ textAlign: 'center' }}>
                                 <strong>Payment Made:</strong><br />
                                 <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#2e7d32' }}>
                                   ₹{parseFloat(transactionDetails.summary.paid_amount || selectedTransaction?.paid_amount || 0).toFixed(2)}
                                 </span>
                               </div>
-                              <div>
+                              <div style={{ textAlign: 'center' }}>
                                 <strong>Remaining Balance:</strong><br />
                                 <span style={{ fontSize: '18px', fontWeight: 'bold', color: parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || selectedTransaction?.amount || 0) - parseFloat(transactionDetails.summary.paid_amount || selectedTransaction?.paid_amount || 0) > 0 ? '#d32f2f' : '#2e7d32' }}>
                                   ₹{Math.max(0, parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || selectedTransaction?.amount || 0) - parseFloat(transactionDetails.summary.paid_amount || selectedTransaction?.paid_amount || 0)).toFixed(2)}
                                 </span>
                               </div>
                               {transactionDetails.summary.previous_balance !== undefined && (
-                                <div>
+                                <div style={{ textAlign: 'center' }}>
                                   <strong>Previous Balance:</strong><br />
                                   ₹{parseFloat(transactionDetails.summary.previous_balance || selectedTransaction?.previous_balance || 0).toFixed(2)}
                                 </div>
                               )}
                               {transactionDetails.summary.balance_amount !== undefined && (
-                                <div>
+                                <div style={{ textAlign: 'center' }}>
                                   <strong>Balance After Transaction:</strong><br />
                                   ₹{parseFloat(transactionDetails.summary.balance_amount || selectedTransaction?.balance_amount || 0).toFixed(2)}
                                 </div>
@@ -1117,11 +1285,11 @@ const Parties = () => {
                           )}
                           {(transactionDetails.type === 'payment' || transactionDetails.type === 'purchase_payment') && (
                             <>
-                              <div>
+                              <div style={{ textAlign: 'center' }}>
                                 <strong>Previous Balance:</strong><br />
                                 ₹{parseFloat(transactionDetails.summary.previous_balance || 0).toFixed(2)}
                               </div>
-                              <div>
+                              <div style={{ textAlign: 'center' }}>
                                 <strong>Updated Balance:</strong><br />
                                 ₹{parseFloat(transactionDetails.summary.updated_balance || 0).toFixed(2)}
                               </div>
@@ -1139,18 +1307,18 @@ const Parties = () => {
                         Party Information
                       </h4>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
-                        <div><strong>Name:</strong> {transactionDetails.party.party_name}</div>
+                        <div style={{ textAlign: 'center' }}><strong>Name:</strong> {transactionDetails.party.party_name}</div>
                         {transactionDetails.party.mobile_number && (
-                          <div><strong>Mobile:</strong> {transactionDetails.party.mobile_number}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Mobile:</strong> {transactionDetails.party.mobile_number}</div>
                         )}
                         {transactionDetails.party.email && (
-                          <div><strong>Email:</strong> {transactionDetails.party.email}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Email:</strong> {transactionDetails.party.email}</div>
                         )}
                         {transactionDetails.party.gst_number && (
-                          <div><strong>GST Number:</strong> {transactionDetails.party.gst_number}</div>
+                          <div style={{ textAlign: 'center' }}><strong>GST Number:</strong> {transactionDetails.party.gst_number}</div>
                         )}
                         {transactionDetails.party.address && (
-                          <div style={{ gridColumn: '1 / -1' }}>
+                          <div style={{ gridColumn: '1 / -1', textAlign: 'center' }}>
                             <strong>Address:</strong> {transactionDetails.party.address}
                           </div>
                         )}
@@ -1168,33 +1336,33 @@ const Parties = () => {
                         <table className="table">
                           <thead>
                             <tr>
-                              <th>S.N.</th>
-                              <th>Product Name</th>
-                              <th>Brand</th>
-                              <th>HSN</th>
-                              <th>Quantity</th>
-                              <th>Rate</th>
-                              {(transactionDetails.type === 'sale' || transactionDetails.type === 'return') && <th>Discount</th>}
-                              <th>Amount</th>
+                              <th style={{ textAlign: 'center' }}>S.N.</th>
+                              <th style={{ textAlign: 'center' }}>Product Name</th>
+                              <th style={{ textAlign: 'center' }}>Brand</th>
+                              <th style={{ textAlign: 'center' }}>HSN</th>
+                              <th style={{ textAlign: 'center' }}>Quantity</th>
+                              <th style={{ textAlign: 'center' }}>Rate</th>
+                              {(transactionDetails.type === 'sale' || transactionDetails.type === 'return') && <th style={{ textAlign: 'center' }}>Discount</th>}
+                              <th style={{ textAlign: 'center' }}>Amount</th>
                             </tr>
                           </thead>
                           <tbody>
                             {transactionDetails.items.map((item, idx) => (
                               <tr key={idx}>
-                                <td>{idx + 1}</td>
-                                <td>{item.product_name}</td>
-                                <td>{item.brand || '-'}</td>
-                                <td>{item.hsn_number || '-'}</td>
+                                <td style={{ textAlign: 'center' }}>{idx + 1}</td>
+                                <td style={{ textAlign: 'center' }}>{item.product_name}</td>
+                                <td style={{ textAlign: 'center' }}>{item.brand || '-'}</td>
+                                <td style={{ textAlign: 'center' }}>{item.hsn_number || '-'}</td>
                                 <td style={{ textAlign: 'center' }}>{item.quantity}</td>
-                                <td>₹{parseFloat(item.sale_rate || item.purchase_rate || item.return_rate || 0).toFixed(2)}</td>
+                                <td style={{ textAlign: 'center' }}>₹{parseFloat(item.sale_rate || item.purchase_rate || item.return_rate || 0).toFixed(2)}</td>
                                 {(transactionDetails.type === 'sale' || transactionDetails.type === 'return') && (
-                                  <td>
+                                  <td style={{ textAlign: 'center' }}>
                                     {item.discount && parseFloat(item.discount) > 0 ? (
                                       `${item.discount_type === 'percentage' ? item.discount_percentage + '%' : '₹' + parseFloat(item.discount).toFixed(2)}`
                                     ) : '-'}
                                   </td>
                                 )}
-                                <td style={{ fontWeight: '600' }}>₹{parseFloat(item.total_amount || 0).toFixed(2)}</td>
+                                <td style={{ fontWeight: '600', textAlign: 'center' }}>₹{parseFloat(item.total_amount || 0).toFixed(2)}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1209,39 +1377,39 @@ const Parties = () => {
                       <h4 style={{ marginBottom: '15px', color: '#333' }}>Transaction Summary</h4>
                       {transactionDetails.type === 'sale' && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-                          <div><strong>Subtotal:</strong> ₹{parseFloat(transactionDetails.summary.subtotal || 0).toFixed(2)}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Subtotal:</strong> ₹{parseFloat(transactionDetails.summary.subtotal || 0).toFixed(2)}</div>
                           {transactionDetails.summary.discount > 0 && (
-                            <div><strong>Discount:</strong> ₹{parseFloat(transactionDetails.summary.discount || 0).toFixed(2)}</div>
+                            <div style={{ textAlign: 'center' }}><strong>Discount:</strong> ₹{parseFloat(transactionDetails.summary.discount || 0).toFixed(2)}</div>
                           )}
                           {transactionDetails.summary.tax_amount > 0 && (
-                            <div><strong>Tax (GST):</strong> ₹{parseFloat(transactionDetails.summary.tax_amount || 0).toFixed(2)}</div>
+                            <div style={{ textAlign: 'center' }}><strong>Tax (GST):</strong> ₹{parseFloat(transactionDetails.summary.tax_amount || 0).toFixed(2)}</div>
                           )}
-                          <div><strong>Total Amount:</strong> ₹{parseFloat(transactionDetails.summary.total_amount || 0).toFixed(2)}</div>
-                          <div><strong>Paid Amount:</strong> ₹{parseFloat(transactionDetails.summary.paid_amount || 0).toFixed(2)}</div>
-                          <div><strong>Remaining Balance:</strong> ₹{parseFloat(transactionDetails.summary.balance_amount || 0).toFixed(2)}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Total Amount:</strong> ₹{parseFloat(transactionDetails.summary.total_amount || 0).toFixed(2)}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Paid Amount:</strong> ₹{parseFloat(transactionDetails.summary.paid_amount || 0).toFixed(2)}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Remaining Balance:</strong> ₹{parseFloat(transactionDetails.summary.balance_amount || 0).toFixed(2)}</div>
                           {transactionDetails.summary.previous_balance_paid > 0 && (
-                            <div><strong>Previous Balance Paid:</strong> ₹{parseFloat(transactionDetails.summary.previous_balance_paid || 0).toFixed(2)}</div>
+                            <div style={{ textAlign: 'center' }}><strong>Previous Balance Paid:</strong> ₹{parseFloat(transactionDetails.summary.previous_balance_paid || 0).toFixed(2)}</div>
                           )}
-                          <div><strong>Payment Status:</strong> {transactionDetails.summary.payment_status?.replace('_', ' ').toUpperCase() || 'N/A'}</div>
-                          <div><strong>Total Items:</strong> {transactionDetails.summary.total_items || 0}</div>
-                          <div><strong>Total Quantity:</strong> {transactionDetails.summary.total_quantity || 0}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Payment Status:</strong> {transactionDetails.summary.payment_status?.replace('_', ' ').toUpperCase() || 'N/A'}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Total Items:</strong> {transactionDetails.summary.total_items || 0}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Total Quantity:</strong> {transactionDetails.summary.total_quantity || 0}</div>
                         </div>
                       )}
                       {transactionDetails.type === 'purchase' && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-                          <div><strong>Total Items:</strong> {transactionDetails.summary.total_items || transactionDetails.items?.length || 0}</div>
-                          <div><strong>Total Quantity:</strong> {transactionDetails.summary.total_quantity || transactionDetails.items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0}</div>
-                          <div><strong>Total Purchase Amount:</strong> ₹{parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || 0).toFixed(2)}</div>
-                          <div><strong>Payment Made:</strong> ₹{parseFloat(transactionDetails.summary.paid_amount || selectedTransaction?.paid_amount || 0).toFixed(2)}</div>
-                          <div><strong>Remaining Balance:</strong> ₹{Math.max(0, parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || selectedTransaction?.amount || 0) - parseFloat(transactionDetails.summary.paid_amount || selectedTransaction?.paid_amount || 0)).toFixed(2)}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Total Items:</strong> {transactionDetails.summary.total_items || transactionDetails.items?.length || 0}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Total Quantity:</strong> {transactionDetails.summary.total_quantity || transactionDetails.items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Total Purchase Amount:</strong> ₹{parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || 0).toFixed(2)}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Payment Made:</strong> ₹{parseFloat(transactionDetails.summary.paid_amount || selectedTransaction?.paid_amount || 0).toFixed(2)}</div>
+                          <div style={{ textAlign: 'center' }}><strong>Remaining Balance:</strong> ₹{Math.max(0, parseFloat(transactionDetails.summary.total_amount || transactionDetails.summary.amount || selectedTransaction?.amount || 0) - parseFloat(transactionDetails.summary.paid_amount || selectedTransaction?.paid_amount || 0)).toFixed(2)}</div>
                           {transactionDetails.summary.previous_balance !== undefined && (
-                            <div><strong>Previous Balance:</strong> ₹{parseFloat(transactionDetails.summary.previous_balance || selectedTransaction?.previous_balance || 0).toFixed(2)}</div>
+                            <div style={{ textAlign: 'center' }}><strong>Previous Balance:</strong> ₹{parseFloat(transactionDetails.summary.previous_balance || selectedTransaction?.previous_balance || 0).toFixed(2)}</div>
                           )}
                           {transactionDetails.summary.balance_amount !== undefined && (
-                            <div><strong>Balance After Transaction:</strong> ₹{parseFloat(transactionDetails.summary.balance_amount || selectedTransaction?.balance_amount || 0).toFixed(2)}</div>
+                            <div style={{ textAlign: 'center' }}><strong>Balance After Transaction:</strong> ₹{parseFloat(transactionDetails.summary.balance_amount || selectedTransaction?.balance_amount || 0).toFixed(2)}</div>
                           )}
                           {transactionDetails.summary.payment_status && (
-                            <div><strong>Payment Status:</strong> 
+                            <div style={{ textAlign: 'center' }}><strong>Payment Status:</strong> 
                               <span style={{
                                 marginLeft: '8px',
                                 padding: '2px 8px',
@@ -1375,7 +1543,21 @@ const Parties = () => {
                     type="number"
                     step="0.01"
                     value={editFormData.opening_balance}
-                    onChange={(e) => setEditFormData({ ...editFormData, opening_balance: e.target.value })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Only allow digits, decimal point, and empty string
+                      // Block mathematical signs: +, -, *, /, e, E
+                      if (val !== '' && !/^[\d.]*$/.test(val)) return;
+                      // Prevent multiple decimal points
+                      if ((val.match(/\./g) || []).length > 1) return;
+                      setEditFormData({ ...editFormData, opening_balance: val });
+                    }}
+                    onKeyDown={(e) => {
+                      // Block mathematical signs and 'e', 'E'
+                      if (['+', '-', '*', '/', 'e', 'E'].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                    }}
                     placeholder="0.00"
                   />
                 </div>
@@ -1385,7 +1567,21 @@ const Parties = () => {
                     type="number"
                     step="0.01"
                     value={editFormData.closing_balance}
-                    onChange={(e) => setEditFormData({ ...editFormData, closing_balance: e.target.value })}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Only allow digits, decimal point, and empty string
+                      // Block mathematical signs: +, -, *, /, e, E
+                      if (val !== '' && !/^[\d.]*$/.test(val)) return;
+                      // Prevent multiple decimal points
+                      if ((val.match(/\./g) || []).length > 1) return;
+                      setEditFormData({ ...editFormData, closing_balance: val });
+                    }}
+                    onKeyDown={(e) => {
+                      // Block mathematical signs and 'e', 'E'
+                      if (['+', '-', '*', '/', 'e', 'E'].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                    }}
                     placeholder="0.00"
                   />
                 </div>

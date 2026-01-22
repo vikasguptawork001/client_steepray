@@ -321,17 +321,17 @@ const ItemWiseSellReport = () => {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th>Brand</th>
-                  <th>HSN</th>
-                  <th>Tax %</th>
-                  <th>Qty</th>
-                  <th>Gross</th>
-                  <th>Discount</th>
-                  <th>Taxable/Net</th>
-                  <th>GST</th>
-                  <th>Net</th>
-                  <th>Bills</th>
+                  <th style={{ textAlign: 'left' }}>Product</th>
+                  <th style={{ textAlign: 'left' }}>Brand</th>
+                  <th style={{ textAlign: 'left' }}>HSN</th>
+                  <th style={{ textAlign: 'right' }}>Tax %</th>
+                  <th style={{ textAlign: 'right' }}>Qty</th>
+                  <th style={{ textAlign: 'right' }}>Gross</th>
+                  <th style={{ textAlign: 'right' }}>Discount</th>
+                  <th style={{ textAlign: 'right' }}>Taxable/Net</th>
+                  <th style={{ textAlign: 'right' }}>GST</th>
+                  <th style={{ textAlign: 'right' }}>Net</th>
+                  <th style={{ textAlign: 'right', padding: '12px 16px' }}>Bills</th>
                 </tr>
               </thead>
               <tbody>
@@ -344,17 +344,17 @@ const ItemWiseSellReport = () => {
                 ) : (
                   rows.map((r) => (
                     <tr key={r.item_id}>
-                      <td>{r.product_name}</td>
-                      <td>{r.brand || '-'}</td>
-                      <td>{r.hsn_number || '-'}</td>
-                      <td>{Number(r.tax_rate || 0).toFixed(2)}%</td>
-                      <td>{Number(r.total_quantity || 0).toFixed(0)}</td>
-                      <td>₹{Number(r.gross_amount || 0).toFixed(2)}</td>
-                      <td>₹{Number(r.discount_amount || 0).toFixed(2)}</td>
-                      <td>₹{Number(r.taxable_or_net_amount || 0).toFixed(2)}</td>
-                      <td>₹{Number(r.gst_amount || 0).toFixed(2)}</td>
-                      <td>₹{Number(r.net_amount || 0).toFixed(2)}</td>
-                      <td>{r.bills_count}</td>
+                      <td style={{ textAlign: 'left' }}>{r.product_name}</td>
+                      <td style={{ textAlign: 'left' }}>{r.brand || '-'}</td>
+                      <td style={{ textAlign: 'left' }}>{r.hsn_number || '-'}</td>
+                      <td style={{ textAlign: 'right' }}>{Number(r.tax_rate || 0).toFixed(2)}%</td>
+                      <td style={{ textAlign: 'right' }}>{Number(r.total_quantity || 0).toFixed(0)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{Number(r.gross_amount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{Number(r.discount_amount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{Number(r.taxable_or_net_amount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{Number(r.gst_amount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>₹{Number(r.net_amount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>{r.bills_count}</td>
                     </tr>
                   ))
                 )}

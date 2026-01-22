@@ -78,6 +78,15 @@ const AddSellerParty = () => {
     let processedValue = value;
 
     if (name === 'opening_balance' || name === 'closing_balance') {
+      // Only allow digits, decimal point, and empty string
+      // Block mathematical signs: +, -, *, /, e, E
+      if (value !== '' && !/^[\d.]*$/.test(value)) {
+        return; // Don't update if invalid characters
+      }
+      // Prevent multiple decimal points
+      if ((value.match(/\./g) || []).length > 1) {
+        return;
+      }
       processedValue = value === '' ? 0 : parseFloat(value) || 0;
       setFormData({
         ...formData,
@@ -367,6 +376,12 @@ const AddSellerParty = () => {
                   name="opening_balance"
                   value={formData.opening_balance === 0 ? '' : formData.opening_balance}
                   onChange={handleChange}
+                  onKeyDown={(e) => {
+                    // Block mathematical signs and 'e', 'E'
+                    if (['+', '-', '*', '/', 'e', 'E'].includes(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -386,6 +401,12 @@ const AddSellerParty = () => {
                   name="closing_balance"
                   value={formData.closing_balance === 0 ? '' : formData.closing_balance}
                   onChange={handleChange}
+                  onKeyDown={(e) => {
+                    // Block mathematical signs and 'e', 'E'
+                    if (['+', '-', '*', '/', 'e', 'E'].includes(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
                   style={{
                     width: '100%',
                     padding: '10px 12px',

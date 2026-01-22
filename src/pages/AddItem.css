@@ -80,6 +80,54 @@
   border-radius: 3px;
 }
 
+/* Center action button in AddItem table */
+.selected-items table td:last-child {
+  text-align: center !important;
+  padding: 8px 4px !important;
+}
+
+.selected-items table td:last-child .action-menu-wrapper {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  text-align: center !important;
+}
+
+/* Ensure action button is centered on all screen sizes */
+@media (max-width: 1200px) {
+  .selected-items table td:last-child {
+    text-align: center !important;
+  }
+  
+  .selected-items table td:last-child .action-menu-wrapper {
+    display: inline-block !important;
+    text-align: center !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .selected-items table td:last-child {
+    text-align: center !important;
+    padding: 8px 2px !important;
+  }
+  
+  .selected-items table td:last-child .action-menu-wrapper {
+    display: inline-block !important;
+    text-align: center !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .selected-items table td:last-child {
+    text-align: center !important;
+    padding: 6px 2px !important;
+  }
+  
+  .selected-items table td:last-child .action-menu-wrapper {
+    display: inline-block !important;
+    text-align: center !important;
+  }
+}
+
 
 
 

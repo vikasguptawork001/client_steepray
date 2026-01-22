@@ -325,14 +325,14 @@ const ReturnReport = () => {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Bill Number</th>
-                  <th>Party Type</th>
-                  <th>Party Name</th>
-                  <th>Items Summary</th>
-                  <th>Total Return Amount</th>
-                  <th>Reason</th>
-                  <th>Actions</th>
+                  <th style={{ textAlign: 'left' }}>Date</th>
+                  <th style={{ textAlign: 'left' }}>Bill Number</th>
+                  <th style={{ textAlign: 'center' }}>Party Type</th>
+                  <th style={{ textAlign: 'left' }}>Party Name</th>
+                  <th style={{ textAlign: 'left' }}>Items Summary</th>
+                  <th style={{ textAlign: 'right' }}>Total Return Amount</th>
+                  <th style={{ textAlign: 'left' }}>Reason</th>
+                  <th style={{ textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -343,9 +343,9 @@ const ReturnReport = () => {
                 ) : (
                   transactions.map((txn) => (
                     <tr key={txn.id}>
-                      <td>{new Date(txn.created_at).toLocaleString()}</td>
-                      <td>{txn.bill_number || '-'}</td>
-                      <td>
+                      <td style={{ textAlign: 'left' }}>{new Date(txn.created_at).toLocaleString()}</td>
+                      <td style={{ textAlign: 'left' }}>{txn.bill_number || '-'}</td>
+                      <td style={{ textAlign: 'center' }}>
                         <span style={{
                           padding: '4px 8px',
                           borderRadius: '4px',
@@ -357,8 +357,8 @@ const ReturnReport = () => {
                           {txn.party_type === 'buyer' ? 'Buyer' : 'Seller'}
                         </span>
                       </td>
-                      <td>{txn.party_name}</td>
-                      <td>
+                      <td style={{ textAlign: 'left' }}>{txn.party_name}</td>
+                      <td style={{ textAlign: 'left' }}>
                         <div style={{ maxWidth: '300px' }}>
                           {txn.items_summary ? (
                             <div>
@@ -374,9 +374,9 @@ const ReturnReport = () => {
                           )}
                         </div>
                       </td>
-                      <td style={{ fontWeight: '600' }}>₹{parseFloat(txn.return_amount || 0).toFixed(2)}</td>
-                      <td>{txn.reason || '-'}</td>
-                      <td>
+                      <td style={{ textAlign: 'right', fontWeight: '600' }}>₹{parseFloat(txn.return_amount || 0).toFixed(2)}</td>
+                      <td style={{ textAlign: 'left' }}>{txn.reason || '-'}</td>
+                      <td style={{ textAlign: 'center' }}>
                         <ActionMenu
                           actions={[
                             {

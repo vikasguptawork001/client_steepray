@@ -181,11 +181,11 @@ const OrderSheet = () => {
             <table className="table">
               <thead>
                 <tr>
-                  <th>S.No</th>
-                  <th>Product Name</th>
-                  <th>Product Code</th>
-                  <th>Brand</th>
-                  <th>Quantity</th>
+                  <th style={{ textAlign: 'left' }}>S.No</th>
+                  <th style={{ textAlign: 'left' }}>Product Name</th>
+                  <th style={{ textAlign: 'left' }}>Product Code</th>
+                  <th style={{ textAlign: 'left' }}>Brand</th>
+                  <th style={{ textAlign: 'right' }}>Quantity</th>
                 </tr>
               </thead>
               <tbody>
@@ -198,11 +198,11 @@ const OrderSheet = () => {
                 ) : (
                   orders.map((order, index) => (
                     <tr key={order.id}>
-                      <td>{index + 1}</td>
-                      <td>{order.product_name}</td>
-                      <td>{order.product_code || 'N/A'}</td>
-                      <td>{order.brand || 'N/A'}</td>
-                      <td>
+                      <td style={{ textAlign: 'left' }}>{index + 1}</td>
+                      <td style={{ textAlign: 'left' }}>{order.product_name}</td>
+                      <td style={{ textAlign: 'left' }}>{order.product_code || 'N/A'}</td>
+                      <td style={{ textAlign: 'left' }}>{order.brand || 'N/A'}</td>
+                      <td style={{ textAlign: 'right' }}>
                         <span className={`quantity-badge low`}>
                           {order.current_quantity}
                         </span>

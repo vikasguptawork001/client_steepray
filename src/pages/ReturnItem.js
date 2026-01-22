@@ -32,6 +32,11 @@ const ReturnItem = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [warningData, setWarningData] = useState(null);
+  // Receipt modal state
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
 
   // Manage body scroll when transaction is processing
   useEffect(() => {
@@ -518,15 +523,27 @@ const ReturnItem = () => {
         toast.success('Return processed successfully!');
       }
       
-      // Generate and download return bill PDF if return_transaction_id is available
-      if (response.data.return_transaction_id && response.data.bill_number) {
+      // Show receipt modal for seller returns
+      if (response.data.return_transaction_id && response.data.bill_number && partyType === 'seller') {
+        setReceiptData({
+          transactionId: response.data.return_transaction_id,
+          billNumber: response.data.bill_number,
+          partyType: partyType,
+          partyName: selectedPartyInfo?.party_name || 'Seller',
+          returnAmount: previewData?.total || 0,
+          reason: returnData.reason,
+          returnType: returnData.return_type,
+          date: new Date().toLocaleDateString()
+        });
+        setShowReceiptModal(true);
+      } else if (response.data.return_transaction_id && response.data.bill_number && partyType === 'buyer') {
+        // For buyer returns, auto-download (existing behavior)
         try {
           const pdfResponse = await apiClient.get(
             `/api/bills/return/${response.data.return_transaction_id}/pdf?party_type=${partyType}`,
             { responseType: 'blob' }
           );
           
-          // Create blob URL and download
           const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
           const url = window.URL.createObjectURL(blob);
           const link = document.createElement('a');
@@ -561,6 +578,77 @@ const ReturnItem = () => {
       toast.error('Error: ' + (error.response?.data?.error || 'Unknown error'));
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleDownloadReceipt = async () => {
+    if (!receiptData || downloadingReceipt) return;
+    
+    setDownloadingReceipt(true);
+    try {
+      const pdfResponse = await apiClient.get(
+        `/api/bills/return/${receiptData.transactionId}/receipt?party_type=${receiptData.partyType}`,
+        { responseType: 'blob' }
+      );
+      
+      const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `return_receipt_${receiptData.billNumber || receiptData.transactionId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Receipt downloaded successfully!');
+    } catch (error) {
+      console.error('Error downloading receipt:', error);
+      toast.error('Failed to download receipt: ' + (error.response?.data?.error || 'Unknown error'));
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
+
+  const handlePrintReceipt = async () => {
+    if (!receiptData || printingReceipt) return;
+    
+    setPrintingReceipt(true);
+    try {
+      const pdfResponse = await apiClient.get(
+        `/api/bills/return/${receiptData.transactionId}/receipt?party_type=${receiptData.partyType}`,
+        { responseType: 'blob' }
+      );
+      
+      const blob = new Blob([pdfResponse.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const printWindow = window.open(url, '_blank');
+      
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      } else {
+        // Fallback: create iframe for printing
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        iframe.onload = () => {
+          iframe.contentWindow.print();
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+            window.URL.revokeObjectURL(url);
+          }, 1000);
+        };
+      }
+      
+      toast.success('Receipt opened for printing!');
+    } catch (error) {
+      console.error('Error printing receipt:', error);
+      toast.error('Failed to print receipt: ' + (error.response?.data?.error || 'Unknown error'));
+    } finally {
+      setPrintingReceipt(false);
     }
   };
 
@@ -1055,7 +1143,19 @@ const ReturnItem = () => {
                             <input
                               type="number"
                               value={item.quantity === 0 ? '' : item.quantity}
-                              onChange={(e) => updateItemQuantity(item.item_id, e.target.value)}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                // Only allow digits and empty string
+                                // Block mathematical signs: +, -, *, /, e, E, decimal point
+                                if (val !== '' && !/^\d+$/.test(val)) return;
+                                updateItemQuantity(item.item_id, val);
+                              }}
+                              onKeyDown={(e) => {
+                                // Block mathematical signs, 'e', 'E', and decimal point
+                                if (['+', '-', '*', '/', 'e', 'E', '.', ','].includes(e.key)) {
+                                  e.preventDefault();
+                                }
+                              }}
                               min="0"
                               max={partyType === 'buyer' ? item.available_quantity : undefined}
                               title={partyType === 'seller' && item.available_quantity === 0 
@@ -1098,7 +1198,10 @@ const ReturnItem = () => {
                                     : (item.discount && item.discount !== 0 ? item.discount : '')}
                                   onChange={(e) => {
                                     const val = e.target.value;
+                                    // Only allow digits, decimal point, and empty string
+                                    // Block mathematical signs: +, -, *, /, e, E
                                     if (val !== '' && !/^[\d.]*$/.test(val)) return;
+                                    // Prevent multiple decimal points
                                     if ((val.match(/\./g) || []).length > 1) return;
                                     
                                     if (item.discount_type === 'percentage') {
@@ -1117,6 +1220,12 @@ const ReturnItem = () => {
                                         if (numVal > itemTotal) return;
                                       }
                                       updateItemDiscount(item.item_id, numVal !== null ? numVal : 0);
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    // Block mathematical signs and 'e', 'E'
+                                    if (['+', '-', '*', '/', 'e', 'E'].includes(e.key)) {
+                                      e.preventDefault();
                                     }
                                   }}
                                   onBlur={(e) => {
@@ -1573,6 +1682,87 @@ const ReturnItem = () => {
           </div>
         </div>
       )}
+
+      {/* Return Receipt Modal - For Seller Returns */}
+      {showReceiptModal && receiptData && (
+        <div className="modal-overlay" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowReceiptModal(false);
+            setReceiptData(null);
+          }
+        }}>
+          <div className="modal-content" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Return Receipt</h3>
+              <button className="modal-close" onClick={() => {
+                setShowReceiptModal(false);
+                setReceiptData(null);
+              }}>×</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '20px' }}>
+                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#2c3e50' }}>Return Processed Successfully!</h4>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff9800' }}>
+                    ₹{receiptData.returnAmount.toFixed(2)}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' }}>
+                  <div>
+                    <strong>Bill Number:</strong><br />
+                    {receiptData.billNumber}
+                  </div>
+                  <div>
+                    <strong>Date:</strong><br />
+                    {receiptData.date}
+                  </div>
+                  <div>
+                    <strong>Party Name:</strong><br />
+                    {receiptData.partyName}
+                  </div>
+                  <div>
+                    <strong>Return Type:</strong><br />
+                    {receiptData.returnType === 'cash' ? 'Cash' : 'Adjust'}
+                  </div>
+                  {receiptData.reason && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <strong>Reason:</strong><br />
+                      {receiptData.reason}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setShowReceiptModal(false);
+                  setReceiptData(null);
+                }}
+                className="btn btn-secondary"
+                disabled={downloadingReceipt || printingReceipt}
+              >
+                Close
+              </button>
+              <button
+                onClick={handleDownloadReceipt}
+                className="btn btn-primary"
+                disabled={downloadingReceipt || printingReceipt}
+              >
+                {downloadingReceipt ? 'Downloading...' : '📥 Download Receipt'}
+              </button>
+              <button
+                onClick={handlePrintReceipt}
+                className="btn btn-success"
+                disabled={downloadingReceipt || printingReceipt}
+              >
+                {printingReceipt ? 'Opening...' : '🖨️ Print Receipt'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Item Search Modal */}
       <ItemSearchModal
         isOpen={showItemSearchModal}
