@@ -6,6 +6,7 @@ const ItemSearchModal = ({
   onClose, 
   items, 
   onItemSelect, 
+  onItemDeselect, // Callback when item is unchecked
   searchQuery,
   onSearchChange,
   title = "Search Items",
@@ -23,10 +24,19 @@ const ItemSearchModal = ({
   }, [isOpen]);
 
   useEffect(() => {
+    // Clear selected items when modal closes
+    if (!isOpen) {
+      setSelectedItemIds(new Set());
+      return;
+    }
+    
     // Auto-check items that are already in cart
-    if (isOpen && selectedItems.length > 0) {
+    if (selectedItems.length > 0) {
       const cartItemIds = new Set(selectedItems.map(item => item.item_id));
       setSelectedItemIds(cartItemIds);
+    } else {
+      // Clear selected items when cart is empty (after transaction)
+      setSelectedItemIds(new Set());
     }
   }, [isOpen, selectedItems]);
 
@@ -45,6 +55,9 @@ const ItemSearchModal = ({
         });
         return newSet;
       });
+    } else if (isOpen && selectedItems.length === 0) {
+      // Clear selected items when cart is empty
+      setSelectedItemIds(new Set());
     }
   }, [items, isOpen, selectedItems]);
 
@@ -62,6 +75,22 @@ const ItemSearchModal = ({
       const wasSelected = newSet.has(item.id);
       if (wasSelected) {
         newSet.delete(item.id);
+        // Remove from cart when unchecked
+        if (onItemDeselect) {
+          // Find the item in selectedItems to get the correct item_id
+          // Try matching by item.id first, then by item_id
+          const cartItem = selectedItems.find(selectedItem => 
+            selectedItem.item_id === item.id || 
+            selectedItem.item_id === item.item_id ||
+            (item.item_id && selectedItem.item_id === item.item_id)
+          );
+          if (cartItem && cartItem.item_id) {
+            onItemDeselect(cartItem.item_id);
+          } else if (item.id) {
+            // Fallback: use item.id directly if cartItem not found
+            onItemDeselect(item.id);
+          }
+        }
       } else {
         newSet.add(item.id);
         // Auto-add to cart when checkbox is checked (only if not already in cart or currently being added)

@@ -428,21 +428,33 @@ const ReturnItem = () => {
       };
     });
 
-    // Check if return amount exceeds balance for seller returns with adjust type
+    // Check if return amount exceeds balance for seller/buyer returns with adjust type
     let warningInfo = null;
-    if (partyType === 'seller' && returnData.return_type === 'adjust' && selectedPartyInfo?.balance_amount !== undefined) {
+    if (returnData.return_type === 'adjust' && selectedPartyInfo?.balance_amount !== undefined) {
       const currentBalance = parseFloat(selectedPartyInfo.balance_amount || 0);
       if (totalAmount > currentBalance) {
         const adjustmentAmount = currentBalance;
         const cashPaymentRequired = totalAmount - currentBalance;
-        warningInfo = {
-          requires_cash_payment: true,
-          return_amount: totalAmount,
-          current_balance: currentBalance,
-          adjustment_amount: adjustmentAmount,
-          cash_payment_required: cashPaymentRequired,
-          message: `Return amount (₹${totalAmount.toFixed(2)}) exceeds current balance (₹${currentBalance.toFixed(2)}). You need to pay ₹${cashPaymentRequired.toFixed(2)} in cash to the seller, and ₹${adjustmentAmount.toFixed(2)} will be adjusted in the account.`
-        };
+        
+        if (partyType === 'seller') {
+          warningInfo = {
+            requires_cash_payment: true,
+            return_amount: totalAmount,
+            current_balance: currentBalance,
+            adjustment_amount: adjustmentAmount,
+            cash_payment_required: cashPaymentRequired,
+            message: `Return amount (₹${totalAmount.toFixed(2)}) exceeds current balance (₹${currentBalance.toFixed(2)}). You need to pay ₹${cashPaymentRequired.toFixed(2)} in cash to the seller, and ₹${adjustmentAmount.toFixed(2)} will be adjusted in the account.`
+          };
+        } else if (partyType === 'buyer') {
+          warningInfo = {
+            requires_cash_payment: true,
+            return_amount: totalAmount,
+            current_balance: currentBalance,
+            adjustment_amount: adjustmentAmount,
+            cash_payment_required: cashPaymentRequired,
+            message: `Return amount (₹${totalAmount.toFixed(2)}) exceeds current balance (₹${currentBalance.toFixed(2)}). You need to take ₹${cashPaymentRequired.toFixed(2)} in cash from the buyer, and ₹${adjustmentAmount.toFixed(2)} will be adjusted in the account.`
+          };
+        }
       }
     }
 
@@ -574,6 +586,7 @@ const ReturnItem = () => {
       setSearchQuery('');
       setShowPreview(false);
       setPreviewData(null);
+      setShowItemSearchModal(false); // Close item search modal
     } catch (error) {
       toast.error('Error: ' + (error.response?.data?.error || 'Unknown error'));
     } finally {
@@ -692,7 +705,7 @@ const ReturnItem = () => {
                       setPreviewData(null);
                     }}
                   />
-                  Return from Buyer
+                  Return to Buyer
                 </label>
               </div>
             </div>
@@ -1603,7 +1616,7 @@ const ReturnItem = () => {
           }}>
             <h3 style={{ color: '#856404', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span style={{ fontSize: '24px' }}>⚠️</span>
-              Warning: Return Amount Exceeds Balance
+              {partyType === 'buyer' ? 'Return to Buyer' : 'Warning: Return Amount Exceeds Balance'}
             </h3>
             <div style={{ marginBottom: '20px', lineHeight: '1.6' }}>
               <p style={{ marginBottom: '15px', fontSize: '16px', color: '#333' }}>
@@ -1628,7 +1641,9 @@ const ReturnItem = () => {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <div>
-                    <strong style={{ color: '#dc3545' }}>Cash Payment Required:</strong>
+                    <strong style={{ color: '#dc3545' }}>
+                      {partyType === 'buyer' ? 'Cash to Receive from Buyer:' : 'Cash Payment Required:'}
+                    </strong>
                     <div style={{ fontSize: '20px', color: '#dc3545', fontWeight: 'bold' }}>
                       ₹{parseFloat(warningData.cash_payment_required || 0).toFixed(2)}
                     </div>
@@ -1642,7 +1657,9 @@ const ReturnItem = () => {
                 </div>
               </div>
               <p style={{ color: '#666', fontSize: '14px', fontStyle: 'italic' }}>
-                Please ensure you have the cash ready to pay to the seller before confirming this return.
+                {partyType === 'buyer' 
+                  ? 'Please ensure you are ready to receive the cash from the buyer before confirming this return.'
+                  : 'Please ensure you have the cash ready to pay to the seller before confirming this return.'}
               </p>
             </div>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -1702,12 +1719,9 @@ const ReturnItem = () => {
             <div className="modal-body">
               <div style={{ padding: '20px', backgroundColor: '#f8f9fa', borderRadius: '8px', marginBottom: '20px' }}>
                 <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                  <h4 style={{ margin: '0 0 10px 0', color: '#2c3e50' }}>Return Processed Successfully!</h4>
-                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff9800' }}>
-                    ₹{receiptData.returnAmount.toFixed(2)}
-                  </div>
+                  <h4 style={{ margin: '0 0 20px 0', color: '#2c3e50' }}>Return Processed Successfully!</h4>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '20px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                   <div>
                     <strong>Bill Number:</strong><br />
                     {receiptData.billNumber}
@@ -1769,6 +1783,7 @@ const ReturnItem = () => {
         onClose={handleModalClose}
         items={suggestedItems}
         onItemSelect={addItemToCart}
+        onItemDeselect={removeItem}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         title="Search Items for Return"

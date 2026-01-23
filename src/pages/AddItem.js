@@ -486,6 +486,7 @@ const AddItem = () => {
       setBuyerInfo(null);
       setPurchasePaymentStatus('partially_paid');
       setPurchasePaidAmount(0);
+      setShowItemSearchModal(false); // Close item search modal
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Unknown error occurred';
       toast.error('Error saving items: ' + errorMessage);
@@ -1199,6 +1200,7 @@ const AddItem = () => {
         onClose={handleModalClose}
         items={suggestedItems}
         onItemSelect={addItemToCart}
+        onItemDeselect={removeItem}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         title="Search Items to Purchase"

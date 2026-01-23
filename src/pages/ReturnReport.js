@@ -270,7 +270,7 @@ const ReturnReport = () => {
               >
                 <option value="">All</option>
                 <option value="seller">Return from Seller</option>
-                <option value="buyer">Return from Buyer</option>
+                <option value="buyer">Return to Buyer</option>
               </select>
             </div>
             <button 
@@ -532,10 +532,25 @@ const ReturnReport = () => {
                                   <td>{item.quantity}</td>
                                   <td>₹{Math.round(parseFloat(item.return_rate || 0) * 100) / 100}</td>
                                   <td>
-                                    {item.discount_type === 'percentage' 
-                                      ? `${item.discount_percentage}% (₹${Math.round(parseFloat(item.discount_amount || 0) * 100) / 100})`
-                                      : `₹${Math.round(parseFloat(item.discount || 0) * 100) / 100}`
-                                    }
+                                    {(() => {
+                                      const hasDiscount = item.discount && parseFloat(item.discount) > 0;
+                                      const hasDiscountPercentage = item.discount_percentage !== null && item.discount_percentage !== undefined && parseFloat(item.discount_percentage) > 0;
+                                      
+                                      if (item.discount_type === 'percentage' && hasDiscountPercentage) {
+                                        const discountPct = parseFloat(item.discount_percentage || 0);
+                                        const discountAmt = Math.round(parseFloat(item.discount_amount || item.discount || 0) * 100) / 100;
+                                        return `${discountPct}% (₹${discountAmt})`;
+                                      } else if (item.discount_type === 'amount' && hasDiscount) {
+                                        const discountAmt = Math.round(parseFloat(item.discount || 0) * 100) / 100;
+                                        return `₹${discountAmt}`;
+                                      } else if (hasDiscount) {
+                                        // Fallback: if discount exists but type is not set
+                                        const discountAmt = Math.round(parseFloat(item.discount || 0) * 100) / 100;
+                                        return `₹${discountAmt}`;
+                                      } else {
+                                        return '-';
+                                      }
+                                    })()}
                                   </td>
                                   <td>₹{Math.round(parseFloat(item.gross_amount || 0) * 100) / 100}</td>
                                   <td>₹{Math.round(parseFloat(item.total_amount || 0) * 100) / 100}</td>

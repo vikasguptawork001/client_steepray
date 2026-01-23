@@ -441,6 +441,8 @@ const SellItem = () => {
         toast.success('✅ Sale completed successfully!');
         dispatch(resetAfterSale());
       }
+      // Close item search modal after successful transaction
+      setShowItemSearchModal(false);
     } catch (error) {
       const errorMessage = error || 'Unknown error occurred';
       console.error('Sale submission error:', error);
@@ -2538,6 +2540,7 @@ const SellItem = () => {
         onClose={handleModalClose}
         items={suggestedItems}
         onItemSelect={handleAddItemToCart}
+        onItemDeselect={(itemId) => dispatch(removeItem(itemId))}
         searchQuery={searchQuery}
         onSearchChange={(value) => dispatch(setSearchQuery(value))}
         title="Search Items"
