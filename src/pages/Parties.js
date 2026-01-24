@@ -17,13 +17,11 @@ const Parties = () => {
   const [parties, setParties] = useState([]);
   const [filter, setFilter] = useState('all'); // 'all', 'buyer', 'seller'
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [buyerParties, setBuyerParties] = useState([]);
   const [sellerParties, setSellerParties] = useState([]);
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(50);
-  const [buyerPagination, setBuyerPagination] = useState(null);
-  const [sellerPagination, setSellerPagination] = useState(null);
+  // Removed pagination - not needed for Parties tab
   const [selectedParty, setSelectedParty] = useState(null);
   const [showPartyDetailsModal, setShowPartyDetailsModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -75,49 +73,77 @@ const Parties = () => {
   useEffect(() => {
     fetchParties();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, filter]);
+  }, [filter]); // Only fetch when filter changes to 'all'
+
+  // Debounce search query - update debouncedSearchQuery after 1 second of no typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 1000); // 1 second delay
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const fetchParties = async () => {
+    // Only fetch when filter is 'all' - this fetches all parties once
+    if (filter !== 'all') {
+      // For buyer/seller filters, just use the already fetched data
+      // No API call needed
+      return;
+    }
+
     try {
       setLoading(true);
       
-      // For "All Parties" view, we need to fetch all parties without pagination
-      // For filtered views, use pagination
-      if (filter === 'all') {
-        // Fetch all parties without pagination for "All" view
-        const [buyersResponse, sellersResponse] = await Promise.all([
-          apiClient.get(config.api.buyers, { params: { page: 1, limit: 10000 } }),
-          apiClient.get(config.api.sellers, { params: { page: 1, limit: 10000 } })
-        ]);
+      // Fetch all parties without pagination for "All" view
+      // Fetch in batches to get all items
+      let allBuyers = [];
+      let allSellers = [];
+      let buyerPage = 1;
+      let sellerPage = 1;
+      let hasMoreBuyers = true;
+      let hasMoreSellers = true;
+      const batchSize = 10000;
+      
+      // Fetch all buyers
+      while (hasMoreBuyers) {
+        const buyersResponse = await apiClient.get(config.api.buyers, { params: { page: buyerPage, limit: batchSize } });
+        const buyers = buyersResponse.data.parties || [];
+        allBuyers = [...allBuyers, ...buyers];
         
-        setBuyerParties(buyersResponse.data.parties || []);
-        setSellerParties(sellersResponse.data.parties || []);
-        setBuyerPagination(buyersResponse.data.pagination);
-        setSellerPagination(sellersResponse.data.pagination);
-        
-        // Combine all parties
-        const allParties = [
-          ...(buyersResponse.data.parties || []).map(p => ({ ...p, party_type: 'buyer' })),
-          ...(sellersResponse.data.parties || []).map(p => ({ ...p, party_type: 'seller' }))
-        ];
-        setParties(allParties);
-      } else {
-        // For buyer or seller filter, use pagination
-        const endpoint = filter === 'buyer' ? config.api.buyers : config.api.sellers;
-        const response = await apiClient.get(endpoint, { params: { page, limit } });
-        
-        if (filter === 'buyer') {
-          setBuyerParties(response.data.parties || []);
-          setBuyerPagination(response.data.pagination);
+        if (buyersResponse.data.pagination) {
+          hasMoreBuyers = buyerPage < buyersResponse.data.pagination.totalPages;
+          buyerPage++;
         } else {
-          setSellerParties(response.data.parties || []);
-          setSellerPagination(response.data.pagination);
+          hasMoreBuyers = buyers.length === batchSize;
+          buyerPage++;
         }
-        
-        // Update combined parties for filtered view
-        const filteredParties = (response.data.parties || []).map(p => ({ ...p, party_type: filter }));
-        setParties(filteredParties);
       }
+      
+      // Fetch all sellers
+      while (hasMoreSellers) {
+        const sellersResponse = await apiClient.get(config.api.sellers, { params: { page: sellerPage, limit: batchSize } });
+        const sellers = sellersResponse.data.parties || [];
+        allSellers = [...allSellers, ...sellers];
+        
+        if (sellersResponse.data.pagination) {
+          hasMoreSellers = sellerPage < sellersResponse.data.pagination.totalPages;
+          sellerPage++;
+        } else {
+          hasMoreSellers = sellers.length === batchSize;
+          sellerPage++;
+        }
+      }
+      
+      setBuyerParties(allBuyers);
+      setSellerParties(allSellers);
+      
+      // Combine all parties
+      const allParties = [
+        ...allBuyers.map(p => ({ ...p, party_type: 'buyer' })),
+        ...allSellers.map(p => ({ ...p, party_type: 'seller' }))
+      ];
+      setParties(allParties);
     } catch (error) {
       console.error('Error fetching parties:', error);
       toast.error('Failed to load parties');
@@ -126,20 +152,23 @@ const Parties = () => {
     }
   };
 
-  // Filter parties based on selected filter and search query
+  // Filter parties based on selected filter and search query (using debounced search)
   const getFilteredParties = () => {
-    let filtered = parties;
+    let filtered = [];
 
-    // Filter by type
+    // Filter by type - use already fetched data, no API call needed
     if (filter === 'buyer') {
       filtered = buyerParties.map(p => ({ ...p, party_type: 'buyer' }));
     } else if (filter === 'seller') {
       filtered = sellerParties.map(p => ({ ...p, party_type: 'seller' }));
+    } else {
+      // 'all' filter - use combined parties
+      filtered = parties;
     }
 
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    // Filter by debounced search query (only searches after user stops typing for 1 second)
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase();
       filtered = filtered.filter(party =>
         party.party_name?.toLowerCase().includes(query) ||
         party.mobile_number?.includes(query) ||
@@ -499,11 +528,24 @@ const Parties = () => {
 
   return (
     <Layout>
-      <TransactionLoader isLoading={processingPayment} type="payment" />
+      <TransactionLoader isLoading={loading || processingPayment} type={processingPayment ? "payment" : "transaction"} message={loading ? 'Loading parties...' : ''} />
       <div className="parties-page">
         <div className="parties-header">
           <h2>Parties</h2>
           <div className="header-actions">
+            <button
+              onClick={() => {
+                setFilter('all');
+                setSearchQuery('');
+                setDebouncedSearchQuery('');
+                fetchParties();
+              }}
+              className="btn btn-secondary"
+              disabled={loading}
+              style={{ marginRight: '10px' }}
+            >
+              {loading ? 'Refreshing...' : '🔄 Refresh'}
+            </button>
             {(filter === 'all' || filter === 'buyer') && user?.role !== 'sales' && (
             <Link to="/add-buyer-party" className="btn btn-primary">
               + Add Buyer Party
@@ -522,21 +564,21 @@ const Parties = () => {
           <div className="filter-tabs">
             <button
               className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
-              onClick={() => { setFilter('all'); setPage(1); }}
+              onClick={() => { setFilter('all'); }}
             >
-              All Parties ({((buyerPagination?.totalRecords || buyerParties.length) + (sellerPagination?.totalRecords || sellerParties.length))})
+              All Parties ({parties.length})
             </button>
             <button
               className={`filter-tab ${filter === 'buyer' ? 'active' : ''}`}
-              onClick={() => { setFilter('buyer'); setPage(1); }}
+              onClick={() => { setFilter('buyer'); }}
             >
-              Buyer Parties ({buyerPagination?.totalRecords || buyerParties.length})
+              Buyer Parties ({buyerParties.length})
             </button>
             <button
               className={`filter-tab ${filter === 'seller' ? 'active' : ''}`}
-              onClick={() => { setFilter('seller'); setPage(1); }}
+              onClick={() => { setFilter('seller'); }}
             >
-              Seller Parties ({sellerPagination?.totalRecords || sellerParties.length})
+              Seller Parties ({sellerParties.length})
             </button>
           </div>
 
@@ -550,21 +592,6 @@ const Parties = () => {
               className="search-input"
               style={{ flex: 1, minWidth: '200px' }}
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '14px', color: '#333', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                Records per page
-              </span>
-              <select
-                value={limit}
-                onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
-                style={{ padding: '10px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', height: '42px' }}
-              >
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={200}>200</option>
-              </select>
-            </div>
           </div>
 
           {/* Summary Cards */}
@@ -732,20 +759,6 @@ const Parties = () => {
                     </tr>
                   </tfoot>
                 </table>
-              )}
-              {((filter === 'all' && (buyerPagination || sellerPagination)) || 
-                (filter === 'buyer' && buyerPagination) || 
-                (filter === 'seller' && sellerPagination)) && 
-                ((filter === 'buyer' && buyerPagination) ||
-                 (filter === 'seller' && sellerPagination) ||
-                 (filter === 'all' && (buyerPagination || sellerPagination))) && (
-                <Pagination
-                  currentPage={page}
-                  totalPages={filter === 'buyer' ? buyerPagination?.totalPages || 1 : filter === 'seller' ? sellerPagination?.totalPages || 1 : Math.max(buyerPagination?.totalPages || 0, sellerPagination?.totalPages || 0)}
-                  onPageChange={setPage}
-                  totalRecords={filter === 'buyer' ? buyerPagination?.totalRecords : filter === 'seller' ? sellerPagination?.totalRecords : (buyerPagination?.totalRecords || 0) + (sellerPagination?.totalRecords || 0)}
-                  showTotalRecords={true}
-                />
               )}
             </div>
           )}
@@ -1633,6 +1646,41 @@ const Parties = () => {
           </div>
         </div>
       )}
+
+      {/* Scroll to Top Button */}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          width: '50px',
+          height: '50px',
+          borderRadius: '50%',
+          backgroundColor: '#3498db',
+          color: 'white',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+          zIndex: 1000,
+          transition: 'all 0.3s ease'
+        }}
+        onMouseEnter={(e) => {
+          e.target.style.backgroundColor = '#2980b9';
+          e.target.style.transform = 'scale(1.1)';
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.backgroundColor = '#3498db';
+          e.target.style.transform = 'scale(1)';
+        }}
+        title="Scroll to top"
+      >
+        ↑
+      </button>
     </Layout>
   );
 };

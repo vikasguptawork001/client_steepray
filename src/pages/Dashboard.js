@@ -20,6 +20,7 @@ const Dashboard = () => {
   const [limit, setLimit] = useState(200);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [searchField, setSearchField] = useState('product_name');
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const [advancedSearch, setAdvancedSearch] = useState({
@@ -46,6 +47,7 @@ const Dashboard = () => {
   const [editItemImagePreview, setEditItemImagePreview] = useState(null);
   const [originalItemData, setOriginalItemData] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
+  const [paginationLoading, setPaginationLoading] = useState(false);
 
   // Fetch items only on mount (not when page/limit changes - those are handled client-side)
   useEffect(() => {
@@ -53,37 +55,73 @@ const Dashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Only fetch once on mount
 
-  // Client-side filtering for quick search
+  // Debounce search query - update debouncedSearch after 1 second of no typing
   useEffect(() => {
-    if (allItems.length === 0) return; // Wait for items to be loaded
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 1000); // 1 second delay
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Client-side filtering for quick search (using debounced search)
+  useEffect(() => {
+    if (allItems.length === 0) {
+      setPaginationLoading(false);
+      return; // Wait for items to be loaded
+    }
     
-    if (!search || search.trim() === '') {
-      // If no search query, show paginated items from allItems
-      const startIndex = (page - 1) * limit;
-      const endIndex = startIndex + limit;
-      setItems(allItems.slice(startIndex, endIndex));
-      setTotalPages(Math.ceil(allItems.length / limit));
-    } else {
-      // Filter items client-side based on search query
-      const query = search.toLowerCase().trim();
-      const filtered = allItems.filter(item => {
-        const fieldValue = String(item[searchField] || '').toLowerCase();
-        return fieldValue.includes(query);
-      });
-      
-      // Reset to page 1 when search changes
-      if (page !== 1) {
-        setPage(1);
-        return; // Will re-run after page is set to 1
+    // Show loader when pagination changes
+    setPaginationLoading(true);
+    
+    // Use setTimeout to ensure UI updates and show loader briefly
+    const timer = setTimeout(() => {
+      if (!debouncedSearch || debouncedSearch.trim() === '') {
+        // If no search query, show paginated items from allItems
+        // If limit equals allItems.length, show all items (no pagination)
+        if (limit >= allItems.length) {
+          setItems(allItems);
+          setTotalPages(1);
+        } else {
+          const startIndex = (page - 1) * limit;
+          const endIndex = startIndex + limit;
+          setItems(allItems.slice(startIndex, endIndex));
+          setTotalPages(Math.ceil(allItems.length / limit));
+        }
+      } else {
+        // Filter items client-side based on debounced search query
+        const query = debouncedSearch.toLowerCase().trim();
+        const filtered = allItems.filter(item => {
+          const fieldValue = String(item[searchField] || '').toLowerCase();
+          return fieldValue.includes(query);
+        });
+        
+        // Reset to page 1 when search changes
+        if (page !== 1) {
+          setPage(1);
+          setPaginationLoading(false);
+          return; // Will re-run after page is set to 1
+        }
+        
+        // Apply pagination to filtered results
+        // If limit equals filtered.length, show all filtered items (no pagination)
+        if (limit >= filtered.length) {
+          setItems(filtered);
+          setTotalPages(1);
+        } else {
+          const startIndex = (page - 1) * limit;
+          const endIndex = startIndex + limit;
+          setItems(filtered.slice(startIndex, endIndex));
+          setTotalPages(Math.ceil(filtered.length / limit));
+        }
       }
       
-      // Apply pagination to filtered results
-      const startIndex = (page - 1) * limit;
-      const endIndex = startIndex + limit;
-      setItems(filtered.slice(startIndex, endIndex));
-      setTotalPages(Math.ceil(filtered.length / limit));
-    }
-  }, [search, searchField, allItems, page, limit]);
+      // Hide loader after items are updated
+      setPaginationLoading(false);
+    }, 100); // Small delay to show loader
+    
+    return () => clearTimeout(timer);
+  }, [debouncedSearch, searchField, allItems, page, limit]);
 
   const fetchItems = async () => {
     try {
@@ -114,11 +152,7 @@ const Dashboard = () => {
           currentPage++;
         }
         
-        // Safety limit: stop after fetching 50,000 items to prevent memory issues
-        if (allFetchedItems.length >= 50000) {
-          console.warn('Reached safety limit of 50,000 items. Some items may not be loaded.');
-          break;
-        }
+        // No safety limit - fetch ALL items
       }
       
       setAllItems(allFetchedItems);
@@ -552,7 +586,7 @@ const Dashboard = () => {
 
   return (
     <Layout>
-      <TransactionLoader isLoading={updating || deleting || quickSaleLoading} type="transaction" message={updating ? 'Updating item...' : deleting ? 'Deleting item...' : quickSaleLoading ? 'Processing quick sale...' : ''} />
+      <TransactionLoader isLoading={updating || deleting || quickSaleLoading || paginationLoading} type="transaction" message={updating ? 'Updating item...' : deleting ? 'Deleting item...' : quickSaleLoading ? 'Processing quick sale...' : paginationLoading ? 'Loading items...' : ''} />
       <div className="dashboard">
         <div className="dashboard-header">
           <h2>Stock Dashboard</h2>
@@ -687,18 +721,20 @@ const Dashboard = () => {
             <label>
               Records per page:
               <select
-                value={limit}
+                value={limit >= allItems.length ? 'all' : limit}
                 onChange={(e) => {
-                  setLimit(parseInt(e.target.value));
+                  setPaginationLoading(true);
+                  const newLimit = e.target.value === 'all' ? allItems.length : parseInt(e.target.value);
+                  setLimit(newLimit);
                   setPage(1);
                 }}
                 style={{ marginLeft: '10px', padding: '5px' }}
+                disabled={paginationLoading || loading}
               >
                 <option value="200">200 (Default)</option>
                 <option value="500">500</option>
                 <option value="2000">2000</option>
-                
-                <option value="10000">All</option>
+                <option value="all">All ({allItems.length} items)</option>
               </select>
             </label>
           </div>
@@ -794,7 +830,16 @@ const Dashboard = () => {
               <Pagination
                 currentPage={page}
                 totalPages={totalPages}
-                onPageChange={setPage}
+                onPageChange={(newPage) => {
+                  if (!paginationLoading) {
+                    setPaginationLoading(true);
+                    setPage(newPage);
+                    // Scroll to top when page changes
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }
+                }}
+                totalRecords={allItems.length}
+                showTotalRecords={true}
               />
             </>
           )}
@@ -1667,6 +1712,41 @@ const Dashboard = () => {
           </div>
         )}
       </div>
+
+      {/* Scroll to Top Button */}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          width: '50px',
+          height: '50px',
+          borderRadius: '50%',
+          backgroundColor: '#3498db',
+          color: 'white',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+          zIndex: 1000,
+          transition: 'all 0.3s ease'
+        }}
+        onMouseEnter={(e) => {
+          e.target.style.backgroundColor = '#2980b9';
+          e.target.style.transform = 'scale(1.1)';
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.backgroundColor = '#3498db';
+          e.target.style.transform = 'scale(1)';
+        }}
+        title="Scroll to top"
+      >
+        ↑
+      </button>
     </Layout>
   );
 };

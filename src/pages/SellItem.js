@@ -44,6 +44,7 @@ const SellItem = () => {
   const toast = useToast();
   const dispatch = useDispatch();
   const itemSearchInputRef = useRef(null);
+  const sellerSearchInputRef = useRef(null);
   
   // Redux state
   const {
@@ -84,16 +85,27 @@ const SellItem = () => {
     }
   }, [selectedSeller, sellerInfo, dispatch, toast]);
 
+  // Debounce search query - only search after 1 second of no typing
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  
   useEffect(() => {
-    if (searchQuery.length >= 2) {
-      dispatch(searchItems({ query: searchQuery, includePurchaseRate: false })); // Selling doesn't need purchase_rate
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 1000); // 1 second delay
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (debouncedSearchQuery.length >= 2) {
+      dispatch(searchItems({ query: debouncedSearchQuery, includePurchaseRate: false })); // Selling doesn't need purchase_rate
       setShowItemSearchModal(true);
     } else {
       dispatch(clearSuggestedItems());
       // Don't close modal when search is cleared - only close explicitly
       // setShowItemSearchModal(false);
     }
-  }, [searchQuery, dispatch]);
+  }, [debouncedSearchQuery, dispatch]);
 
   // Close suggestions when clicking outside
   useEffect(() => {
@@ -1830,15 +1842,26 @@ const SellItem = () => {
                 ℹ️ No seller parties available. Please add seller parties first.
               </div>
             )}
-            <div className="search-wrapper">
+            <div className="search-wrapper" style={{ position: 'relative' }}>
               <input
+                ref={sellerSearchInputRef}
                 type="text"
                 placeholder="👤 Search seller party by name, mobile, or address..."
                 value={sellerSearchQuery}
                 onChange={(e) => {
-                  dispatch(setSellerSearchQuery(e.target.value));
+                  const newValue = e.target.value;
+                  const cursorPosition = e.target.selectionStart;
+                  dispatch(setSellerSearchQuery(newValue));
+                  // Restore cursor position after state update
+                  setTimeout(() => {
+                    if (sellerSearchInputRef.current) {
+                      sellerSearchInputRef.current.setSelectionRange(cursorPosition, cursorPosition);
+                      sellerSearchInputRef.current.focus();
+                    }
+                  }, 0);
                 }}
-                onFocus={() => {
+                onFocus={(e) => {
+                  // Maintain focus
                   if (sellerParties.length > 0) {
                     if (sellerSearchQuery) {
                       dispatch(setShowSellerSuggestions(filteredSellerParties.length > 0));
@@ -1847,7 +1870,50 @@ const SellItem = () => {
                     }
                   }
                 }}
+                onKeyDown={(e) => {
+                  // Prevent any interference with typing
+                  e.stopPropagation();
+                }}
               />
+              {selectedSeller && sellerInfo && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dispatch(setSelectedSeller(''));
+                    dispatch(setSellerSearchQuery(''));
+                    dispatch(setShowSellerSuggestions(false));
+                    // Refocus input after clearing
+                    setTimeout(() => {
+                      if (sellerSearchInputRef.current) {
+                        sellerSearchInputRef.current.focus();
+                      }
+                    }, 0);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '20px',
+                    color: '#999',
+                    padding: '5px 10px',
+                    zIndex: 10,
+                    lineHeight: '1'
+                  }}
+                  title="Clear seller selection"
+                  onMouseDown={(e) => {
+                    // Prevent input from losing focus when clicking clear button
+                    e.preventDefault();
+                  }}
+                >
+                  ×
+                </button>
+              )}
               {showSellerSuggestions && (sellerSearchQuery ? filteredSellerParties : sellerParties).length > 0 && (
                 <div className="suggestions seller-suggestions">
                   {(sellerSearchQuery ? filteredSellerParties : sellerParties).map(party => (

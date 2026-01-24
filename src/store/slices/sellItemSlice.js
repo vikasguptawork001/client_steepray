@@ -284,17 +284,26 @@ const sellItemSlice = createSlice({
       state.selectedSeller = newSellerId;
     },
     setSellerSearchQuery: (state, action) => {
-      state.sellerSearchQuery = action.payload;
-      if (!action.payload) {
+      const newQuery = action.payload;
+      state.sellerSearchQuery = newQuery;
+      if (!newQuery) {
         state.selectedSeller = '';
         state.sellerInfo = null;
         state.filteredSellerParties = state.sellerParties;
         state.showSellerSuggestions = false;
       } else {
+        // Clear selected seller if user is typing something different than the selected seller's name
+        if (state.selectedSeller && state.sellerInfo) {
+          const selectedSellerName = state.sellerInfo.party_name || '';
+          if (newQuery !== selectedSellerName && !newQuery.startsWith(selectedSellerName)) {
+            state.selectedSeller = '';
+            state.sellerInfo = null;
+          }
+        }
         const filtered = state.sellerParties.filter(party =>
-          party.party_name.toLowerCase().includes(action.payload.toLowerCase()) ||
-          (party.mobile_number && party.mobile_number.includes(action.payload)) ||
-          (party.address && party.address.toLowerCase().includes(action.payload.toLowerCase()))
+          party.party_name.toLowerCase().includes(newQuery.toLowerCase()) ||
+          (party.mobile_number && party.mobile_number.includes(newQuery)) ||
+          (party.address && party.address.toLowerCase().includes(newQuery.toLowerCase()))
         );
         state.filteredSellerParties = filtered;
         state.showSellerSuggestions = filtered.length > 0;

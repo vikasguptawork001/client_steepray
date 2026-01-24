@@ -37,7 +37,7 @@ const ItemWiseSellReport = () => {
     debounceTimerRef.current = setTimeout(() => {
       setDebouncedItemQuery(itemQuery);
       setPage(1); // Reset to first page when search changes
-    }, 500); // 500ms debounce delay
+    }, 1000); // 1 second debounce delay
 
     return () => {
       if (debounceTimerRef.current) {
@@ -269,14 +269,20 @@ const ItemWiseSellReport = () => {
             <div className="form-group">
               <label>Records per page</label>
               <select
-                value={limit}
-                onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                value={limit >= (pagination?.totalRecords || 0) ? 'all' : limit}
+                onChange={(e) => { 
+                  const newLimit = e.target.value === 'all' ? (pagination?.totalRecords || 10000) : Number(e.target.value);
+                  setLimit(newLimit); 
+                  setPage(1); 
+                }}
                 className="date-input"
+                disabled={loading}
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
                 <option value={200}>200</option>
+                <option value="all">All ({pagination?.totalRecords || 0} records)</option>
               </select>
             </div>
           </div>

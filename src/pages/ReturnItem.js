@@ -19,6 +19,7 @@ const ReturnItem = () => {
   const [partySearchQuery, setPartySearchQuery] = useState('');
   const [showPartySuggestions, setShowPartySuggestions] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [suggestedItems, setSuggestedItems] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]); // Array of items to return
   const [selectedItemIds, setSelectedItemIds] = useState(new Set()); // For multi-select
@@ -56,8 +57,17 @@ const ReturnItem = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Debounce search query - update debouncedSearchQuery after 1 second of no typing
   useEffect(() => {
-    if (searchQuery.length >= 2) {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 1000); // 1 second delay
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (debouncedSearchQuery.length >= 2) {
       searchItems();
       // Auto-open modal when user types in the search input (not when button is clicked)
       if (!showItemSearchModal) {
@@ -68,7 +78,7 @@ const ReturnItem = () => {
       setSuggestedItems([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery, partyType]); // Include partyType so search includes purchase_rate for buyer returns
+  }, [debouncedSearchQuery, partyType]); // Include partyType so search includes purchase_rate for buyer returns
 
   useEffect(() => {
     if (selectedParty && partyType) {
@@ -141,7 +151,7 @@ const ReturnItem = () => {
     try {
       const response = await apiClient.get(config.api.itemsSearch, {
         params: { 
-          q: searchQuery,
+          q: debouncedSearchQuery,
           include_purchase_rate: partyType === 'buyer' ? 'true' : undefined // Include purchase_rate for buyer returns
         }
       });

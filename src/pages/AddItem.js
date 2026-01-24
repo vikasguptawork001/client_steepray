@@ -24,6 +24,7 @@ const AddItem = () => {
   const [loadingBuyerParties, setLoadingBuyerParties] = useState(true);
   const [buyerPartiesError, setBuyerPartiesError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [suggestedItems, setSuggestedItems] = useState([]);
   const [selectedItems, setSelectedItems] = useState([]);
   const [selectedItemIds, setSelectedItemIds] = useState(new Set()); // For multi-select
@@ -92,8 +93,17 @@ const AddItem = () => {
 
   const [showItemSearchModal, setShowItemSearchModal] = useState(false);
 
+  // Debounce search query - update debouncedSearchQuery after 1 second of no typing
   useEffect(() => {
-    if (searchQuery.length >= 2) {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 1000); // 1 second delay
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (debouncedSearchQuery.length >= 2) {
       searchItems();
       setShowItemSearchModal(true);
     } else {
@@ -102,7 +112,7 @@ const AddItem = () => {
       // setShowItemSearchModal(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery]);
+  }, [debouncedSearchQuery]);
 
   const fetchBuyerParties = async () => {
     setLoadingBuyerParties(true);
@@ -140,7 +150,7 @@ const AddItem = () => {
     try {
       const response = await apiClient.get(config.api.itemsSearch, {
         params: { 
-          q: searchQuery,
+          q: debouncedSearchQuery,
           include_purchase_rate: 'true' // AddItem is for buyer purchase, needs purchase_rate
         }
       });

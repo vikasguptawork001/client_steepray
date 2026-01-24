@@ -289,14 +289,20 @@ const ReturnReport = () => {
             <div className="form-group">
               <label>Records per page</label>
               <select
-                value={limit}
-                onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                value={limit >= (pagination?.totalRecords || 0) ? 'all' : limit}
+                onChange={(e) => { 
+                  const newLimit = e.target.value === 'all' ? (pagination?.totalRecords || 10000) : Number(e.target.value);
+                  setLimit(newLimit); 
+                  setPage(1); 
+                }}
                 className="date-input"
+                disabled={loading}
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
                 <option value={200}>200</option>
+                <option value="all">All ({pagination?.totalRecords || 0} records)</option>
               </select>
             </div>
           </div>
@@ -394,13 +400,15 @@ const ReturnReport = () => {
                 )}
               </tbody>
             </table>
-            {pagination && !loading && (
+            {pagination && (
               <Pagination
                 currentPage={page}
                 totalPages={pagination.totalPages}
                 onPageChange={(newPage) => {
                   if (!loading) {
                     setPage(newPage);
+                    // Scroll to top when page changes
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }
                 }}
                 totalRecords={pagination.totalRecords}
@@ -598,6 +606,41 @@ const ReturnReport = () => {
         )}
 
       </div>
+
+      {/* Scroll to Top Button */}
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        style={{
+          position: 'fixed',
+          bottom: '30px',
+          right: '30px',
+          width: '50px',
+          height: '50px',
+          borderRadius: '50%',
+          backgroundColor: '#3498db',
+          color: 'white',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
+          zIndex: 1000,
+          transition: 'all 0.3s ease'
+        }}
+        onMouseEnter={(e) => {
+          e.target.style.backgroundColor = '#2980b9';
+          e.target.style.transform = 'scale(1.1)';
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.backgroundColor = '#3498db';
+          e.target.style.transform = 'scale(1)';
+        }}
+        title="Scroll to top"
+      >
+        ↑
+      </button>
     </Layout>
   );
 };

@@ -161,14 +161,20 @@ const OrderSheet = () => {
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Records per page</label>
               <select
-                value={limit}
-                onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                value={limit >= (pagination?.totalRecords || 0) ? 'all' : limit}
+                onChange={(e) => { 
+                  const newLimit = e.target.value === 'all' ? (pagination?.totalRecords || 10000) : Number(e.target.value);
+                  setLimit(newLimit); 
+                  setPage(1); 
+                }}
                 style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }}
+                disabled={loading}
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
                 <option value={200}>200</option>
+                <option value="all">All ({pagination?.totalRecords || 0} records)</option>
               </select>
             </div>
           </div>
