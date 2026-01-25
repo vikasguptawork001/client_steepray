@@ -31,7 +31,8 @@ export const searchItems = createAsyncThunk(
   'sellItem/searchItems',
   async ({ query, includePurchaseRate = false }, { rejectWithValue }) => {
     try {
-      const params = { q: query };
+      const trimmedQuery = (query || '').trim();
+      const params = { q: trimmedQuery };
       if (includePurchaseRate) {
         params.include_purchase_rate = 'true';
       }
@@ -160,6 +161,8 @@ export const calculatePreview = createAsyncThunk(
       // Use the effective values (automatically calculated above)
       const prevBalanceToPay = effectivePreviousBalancePaid;
       const grandTotal = invoiceTotal + prevBalanceToPay;
+      // Round grand total to whole number (no decimals) - this is the final amount
+      const roundedGrandTotal = Math.round(grandTotal);
       
       return {
         seller: sellerInfo,
@@ -171,9 +174,11 @@ export const calculatePreview = createAsyncThunk(
         total: invoiceTotal,
         previousBalance,
         previousBalancePaid: prevBalanceToPay,
-        grandTotal,
+        grandTotal: roundedGrandTotal, // Use rounded grand total
         paymentStatus,
-        paidAmount: paymentStatus === 'fully_paid' ? grandTotal : paidAmount,
+        // Round paid amount to whole number (no decimals)
+        // For partially_paid, always use 0 if not explicitly provided
+        paidAmount: paymentStatus === 'fully_paid' ? roundedGrandTotal : (paidAmount !== undefined && paidAmount !== null ? Math.round(paidAmount) : 0),
         selectedSeller: sellerInfo?.id || ''
       };
     } catch (error) {
@@ -197,7 +202,7 @@ export const submitSale = createAsyncThunk(
           discount_percentage: item.discount_percentage !== null && item.discount_percentage !== undefined ? parseFloat(item.discount_percentage) : null
         })),
         payment_status: previewData.paymentStatus,
-        paid_amount: previewData.paidAmount,
+        paid_amount: Math.round(previewData.paidAmount || 0), // Ensure rounded whole number
         with_gst: previewData.withGst || false,
         previous_balance_paid: previewData.previousBalancePaid || 0
       });
@@ -234,7 +239,7 @@ const initialState = {
   previewLoading: false,
   
   // Payment state
-  paymentStatus: 'fully_paid',
+  paymentStatus: 'partially_paid', // Default to partial payment
   paidAmount: 0,
   
   // GST state
@@ -284,7 +289,7 @@ const sellItemSlice = createSlice({
       state.selectedSeller = newSellerId;
     },
     setSellerSearchQuery: (state, action) => {
-      const newQuery = action.payload;
+      const newQuery = (action.payload || '').trim();
       state.sellerSearchQuery = newQuery;
       if (!newQuery) {
         state.selectedSeller = '';
@@ -294,16 +299,17 @@ const sellItemSlice = createSlice({
       } else {
         // Clear selected seller if user is typing something different than the selected seller's name
         if (state.selectedSeller && state.sellerInfo) {
-          const selectedSellerName = state.sellerInfo.party_name || '';
+          const selectedSellerName = (state.sellerInfo.party_name || '').trim();
           if (newQuery !== selectedSellerName && !newQuery.startsWith(selectedSellerName)) {
             state.selectedSeller = '';
             state.sellerInfo = null;
           }
         }
+        // Filter seller parties with trimmed query
         const filtered = state.sellerParties.filter(party =>
-          party.party_name.toLowerCase().includes(newQuery.toLowerCase()) ||
+          (party.party_name || '').toLowerCase().includes(newQuery.toLowerCase()) ||
           (party.mobile_number && party.mobile_number.includes(newQuery)) ||
-          (party.address && party.address.toLowerCase().includes(newQuery.toLowerCase()))
+          (party.address && (party.address || '').toLowerCase().includes(newQuery.toLowerCase()))
         );
         state.filteredSellerParties = filtered;
         state.showSellerSuggestions = filtered.length > 0;
@@ -629,7 +635,7 @@ const sellItemSlice = createSlice({
       state.selectedSeller = '';
       state.sellerInfo = null;
       state.previewData = null;
-      state.paymentStatus = 'fully_paid';
+      state.paymentStatus = 'partially_paid'; // Default to partial payment
       state.paidAmount = 0;
       state.previousBalancePaid = 0;
       state.payPreviousBalance = false;

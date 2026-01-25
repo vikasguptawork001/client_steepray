@@ -60,14 +60,16 @@ const ReturnItem = () => {
   // Debounce search query - update debouncedSearchQuery after 1 second of no typing
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
+      const trimmedQuery = searchQuery.trim();
+      setDebouncedSearchQuery(trimmedQuery);
     }, 1000); // 1 second delay
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
   useEffect(() => {
-    if (debouncedSearchQuery.length >= 2) {
+    const trimmedQuery = debouncedSearchQuery.trim();
+    if (trimmedQuery.length >= 2) {
       searchItems();
       // Auto-open modal when user types in the search input (not when button is clicked)
       if (!showItemSearchModal) {
@@ -90,17 +92,18 @@ const ReturnItem = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedParty, partyType]);
 
-  // Filter parties based on search query
+  // Filter parties based on search query (trimmed)
+  const trimmedPartyQuery = partySearchQuery.trim();
   const filteredSellerParties = sellerParties.filter(party =>
-    party.party_name.toLowerCase().includes(partySearchQuery.toLowerCase()) ||
-    (party.mobile_number && party.mobile_number.includes(partySearchQuery)) ||
-    (party.email && party.email.toLowerCase().includes(partySearchQuery.toLowerCase()))
+    (party.party_name || '').toLowerCase().includes(trimmedPartyQuery.toLowerCase()) ||
+    (party.mobile_number && party.mobile_number.includes(trimmedPartyQuery)) ||
+    (party.email && (party.email || '').toLowerCase().includes(trimmedPartyQuery.toLowerCase()))
   );
 
   const filteredBuyerParties = buyerParties.filter(party =>
-    party.party_name.toLowerCase().includes(partySearchQuery.toLowerCase()) ||
-    (party.mobile_number && party.mobile_number.includes(partySearchQuery)) ||
-    (party.email && party.email.toLowerCase().includes(partySearchQuery.toLowerCase()))
+    (party.party_name || '').toLowerCase().includes(trimmedPartyQuery.toLowerCase()) ||
+    (party.mobile_number && party.mobile_number.includes(trimmedPartyQuery)) ||
+    (party.email && (party.email || '').toLowerCase().includes(trimmedPartyQuery.toLowerCase()))
   );
 
   // Close suggestions when clicking outside
@@ -149,9 +152,10 @@ const ReturnItem = () => {
 
   const searchItems = async () => {
     try {
+      const trimmedQuery = debouncedSearchQuery.trim();
       const response = await apiClient.get(config.api.itemsSearch, {
         params: { 
-          q: debouncedSearchQuery,
+          q: trimmedQuery,
           include_purchase_rate: partyType === 'buyer' ? 'true' : undefined // Include purchase_rate for buyer returns
         }
       });

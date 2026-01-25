@@ -58,7 +58,8 @@ const Dashboard = () => {
   // Debounce search query - update debouncedSearch after 1 second of no typing
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(search);
+      const trimmedSearch = search.trim();
+      setDebouncedSearch(trimmedSearch);
     }, 1000); // 1 second delay
 
     return () => clearTimeout(timer);

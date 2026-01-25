@@ -35,7 +35,8 @@ const ItemWiseSellReport = () => {
     }
     
     debounceTimerRef.current = setTimeout(() => {
-      setDebouncedItemQuery(itemQuery);
+      const trimmedQuery = itemQuery.trim();
+      setDebouncedItemQuery(trimmedQuery);
       setPage(1); // Reset to first page when search changes
     }, 1000); // 1 second debounce delay
 

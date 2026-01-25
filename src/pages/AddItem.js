@@ -53,8 +53,12 @@ const AddItem = () => {
     const rate = parseFloat(it.purchase_rate) || 0;
     return sum + qty * rate;
   }, 0);
-  const purchasePaidNow = purchasePaymentStatus === 'fully_paid' ? purchaseTotal : Math.max(0, parseFloat(purchasePaidAmount) || 0);
-  const purchaseBalance = Math.max(0, purchaseTotal - purchasePaidNow);
+  // Round purchase total to whole number
+  const roundedPurchaseTotal = Math.round(purchaseTotal);
+  // Round paid amount to whole number (no decimals)
+  const purchasePaidNow = purchasePaymentStatus === 'fully_paid' ? roundedPurchaseTotal : Math.max(0, Math.round(purchasePaidAmount || 0));
+  // Calculate balance using rounded values
+  const purchaseBalance = Math.max(0, roundedPurchaseTotal - purchasePaidNow);
 
   useEffect(() => {
     // Check if user has permission to add items
@@ -81,10 +85,11 @@ const AddItem = () => {
       setFilteredBuyerParties(buyerParties);
       setShowBuyerSuggestions(false);
     } else {
+      const trimmedQuery = buyerSearchQuery.trim().toLowerCase();
       const filtered = buyerParties.filter(party =>
-        party.party_name.toLowerCase().includes(buyerSearchQuery.toLowerCase()) ||
-        (party.mobile_number && party.mobile_number.includes(buyerSearchQuery)) ||
-        (party.address && party.address.toLowerCase().includes(buyerSearchQuery.toLowerCase()))
+        (party.party_name || '').toLowerCase().includes(trimmedQuery) ||
+        (party.mobile_number && party.mobile_number.includes(buyerSearchQuery.trim())) ||
+        (party.address && (party.address || '').toLowerCase().includes(trimmedQuery))
       );
       setFilteredBuyerParties(filtered);
       setShowBuyerSuggestions(true);
@@ -96,14 +101,16 @@ const AddItem = () => {
   // Debounce search query - update debouncedSearchQuery after 1 second of no typing
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
+      const trimmedQuery = searchQuery.trim();
+      setDebouncedSearchQuery(trimmedQuery);
     }, 1000); // 1 second delay
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
   useEffect(() => {
-    if (debouncedSearchQuery.length >= 2) {
+    const trimmedQuery = debouncedSearchQuery.trim();
+    if (trimmedQuery.length >= 2) {
       searchItems();
       setShowItemSearchModal(true);
     } else {
@@ -148,9 +155,10 @@ const AddItem = () => {
 
   const searchItems = async () => {
     try {
+      const trimmedQuery = debouncedSearchQuery.trim();
       const response = await apiClient.get(config.api.itemsSearch, {
         params: { 
-          q: debouncedSearchQuery,
+          q: trimmedQuery,
           include_purchase_rate: 'true' // AddItem is for buyer purchase, needs purchase_rate
         }
       });
@@ -488,7 +496,7 @@ const AddItem = () => {
         buyer_party_id: selectedBuyer,
         items: selectedItems,
         payment_status: purchasePaymentStatus,
-        paid_amount: purchasePaidNow
+        paid_amount: purchasePaidNow // Already rounded to whole number
       });
       toast.success('Items added successfully!');
       setSelectedItems([]);
@@ -1126,8 +1134,26 @@ const AddItem = () => {
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                   <div>
-                    <div style={{ fontSize: '13px', color: '#555' }}>Total Purchase</div>
+                    <div style={{ fontSize: '13px', color: '#555' }}>Cart Amount</div>
                     <div style={{ fontSize: '18px', fontWeight: 700 }}>₹{purchaseTotal.toFixed(2)}</div>
+                  </div>
+                  {Math.abs(roundedPurchaseTotal - purchaseTotal) > 0.0001 && (
+                    <div>
+                      <div style={{ fontSize: '13px', color: '#555' }}>
+                        Rounded Off ({roundedPurchaseTotal - purchaseTotal > 0 ? '+' : '-'})
+                      </div>
+                      <div style={{ 
+                        fontSize: '18px', 
+                        fontWeight: 700, 
+                        color: (roundedPurchaseTotal - purchaseTotal) > 0 ? '#28a745' : '#dc3545' 
+                      }}>
+                        {roundedPurchaseTotal - purchaseTotal > 0 ? '+' : ''}₹{Math.abs(roundedPurchaseTotal - purchaseTotal).toFixed(2)}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ fontSize: '13px', color: '#555' }}>Total Purchase</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700 }}>₹{roundedPurchaseTotal.toFixed(2)}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: '13px', color: '#555' }}>Paid Now</div>
@@ -1148,7 +1174,7 @@ const AddItem = () => {
                       checked={purchasePaymentStatus === 'fully_paid'}
                       onChange={() => {
                         setPurchasePaymentStatus('fully_paid');
-                        setPurchasePaidAmount(purchaseTotal);
+                        setPurchasePaidAmount(roundedPurchaseTotal);
                       }}
                       disabled={isSubmitting || isAddingNewItem}
                     />
@@ -1171,14 +1197,28 @@ const AddItem = () => {
                       <span style={{ fontSize: '13px', color: '#555' }}>Paid Amount:</span>
                       <input
                         type="number"
-                        step="0.01"
                         min="0"
-                        max={purchaseTotal}
+                        max={roundedPurchaseTotal}
                         value={purchasePaidAmount}
                         onChange={(e) => {
                           const val = e.target.value;
-                          const num = val === '' ? 0 : (parseFloat(val) || 0);
-                          setPurchasePaidAmount(Math.min(Math.max(0, num), purchaseTotal));
+                          if (val === '') {
+                            setPurchasePaidAmount(0);
+                            return;
+                          }
+                          // Only allow whole numbers (no decimals, no leading zeros)
+                          // Prevent values like 0.5, 0.25, etc.
+                          if (!/^\d+$/.test(val)) return;
+                          // Prevent leading zero (like 01, 02, etc.) unless it's just "0"
+                          if (val.length > 1 && val.startsWith('0')) return;
+                          const num = parseInt(val) || 0;
+                          setPurchasePaidAmount(Math.min(Math.max(0, num), roundedPurchaseTotal));
+                        }}
+                        onKeyDown={(e) => {
+                          // Prevent decimal point, comma, and mathematical signs
+                          if (['+', '-', '*', '/', 'e', 'E', '.', ','].includes(e.key)) {
+                            e.preventDefault();
+                          }
                         }}
                         disabled={isSubmitting || isAddingNewItem}
                         style={{ width: '140px', padding: '8px 10px', border: '1px solid #ddd', borderRadius: '6px' }}

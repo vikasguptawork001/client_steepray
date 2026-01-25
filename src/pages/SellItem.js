@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import Layout from '../components/Layout';
 import apiClient from '../config/axios';
@@ -46,6 +48,13 @@ const SellItem = () => {
   const itemSearchInputRef = useRef(null);
   const sellerSearchInputRef = useRef(null);
   
+  // Success modal state
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successModalData, setSuccessModalData] = useState(null);
+  const [downloadingPDF, setDownloadingPDF] = useState(false);
+  const [printingPDF, setPrintingPDF] = useState(false);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
+  
   // Redux state
   const {
     sellerParties,
@@ -90,15 +99,17 @@ const SellItem = () => {
   
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
+      const trimmedQuery = searchQuery.trim();
+      setDebouncedSearchQuery(trimmedQuery);
     }, 1000); // 1 second delay
 
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
   useEffect(() => {
-    if (debouncedSearchQuery.length >= 2) {
-      dispatch(searchItems({ query: debouncedSearchQuery, includePurchaseRate: false })); // Selling doesn't need purchase_rate
+    const trimmedQuery = debouncedSearchQuery.trim();
+    if (trimmedQuery.length >= 2) {
+      dispatch(searchItems({ query: trimmedQuery, includePurchaseRate: false })); // Selling doesn't need purchase_rate
       setShowItemSearchModal(true);
     } else {
       dispatch(clearSuggestedItems());
@@ -324,7 +335,11 @@ const SellItem = () => {
     
     const effectivePaymentStatus =
       overrides.paymentStatus !== undefined ? overrides.paymentStatus : paymentStatus;
-    const effectivePaidAmount = overrides.paidAmount !== undefined ? overrides.paidAmount : paidAmount;
+    // For partially_paid, always default to 0 if not explicitly provided
+    let effectivePaidAmount = overrides.paidAmount !== undefined ? overrides.paidAmount : paidAmount;
+    if (effectivePaymentStatus === 'partially_paid' && (effectivePaidAmount === undefined || effectivePaidAmount === null || effectivePaidAmount === '')) {
+      effectivePaidAmount = 0;
+    }
     
     // Preserve discount values from previewData if it exists
     const itemsToProcess = previewData && previewData.items ? previewData.items.map(pItem => {
@@ -409,8 +424,10 @@ const SellItem = () => {
 
       if (previewData.paymentStatus === 'partially_paid') {
         // Use Redux state paidAmount as it's the most up-to-date value
-        const paidAmt = parseFloat(paidAmount) || 0;
+        // Round to whole number for validation
+        const paidAmt = Math.round(paidAmount || 0);
         const grandTotal = previewData.grandTotal || previewData.total || 0;
+        const roundedGrandTotal = Math.round(grandTotal);
         
         // Allow 0 for partial payment, only check if negative
         if (paidAmt < 0) {
@@ -418,19 +435,20 @@ const SellItem = () => {
           return;
         }
         
-        if (paidAmt > grandTotal) {
-          toast.error(`❌ Paid amount (₹${paidAmt.toFixed(2)}) cannot exceed grand total (₹${grandTotal.toFixed(2)})`);
+        if (paidAmt > roundedGrandTotal) {
+          toast.error(`❌ Paid amount (₹${paidAmt.toFixed(2)}) cannot exceed grand total (₹${roundedGrandTotal.toFixed(2)})`);
           return;
         }
       }
 
       toast.info('⏳ Processing your sale transaction...');
       // Use current Redux state for paidAmount to ensure we send the latest value
+      // Round to whole number (no decimals)
       const currentPaidAmount = previewData.paymentStatus === 'partially_paid' 
-        ? (paidAmount || 0) 
-        : (previewData.paidAmount || 0);
+        ? Math.round(paidAmount || 0)
+        : Math.round(previewData.paidAmount || 0);
       
-      // Create updated preview data with current paidAmount
+      // Create updated preview data with current paidAmount (rounded)
       const updatedPreviewData = {
         ...previewData,
         paidAmount: currentPaidAmount
@@ -439,16 +457,58 @@ const SellItem = () => {
       const result = await dispatch(submitSale({ previewData: updatedPreviewData, selectedSeller })).unwrap();
       
       // Refresh seller info to get updated balance after transaction
-      // This is necessary to get the updated balance, so we always fetch
+      let updatedSellerInfo = sellerInfo;
       if (selectedSeller) {
-        dispatch(fetchSellerInfo(selectedSeller)).catch((error) => {
+        try {
+          const sellerInfoResult = await dispatch(fetchSellerInfo(selectedSeller)).unwrap();
+          updatedSellerInfo = sellerInfoResult;
+        } catch (error) {
           console.error('Error refreshing seller info:', error);
-        });
+        }
       }
       
       if (result.transactionId) {
         dispatch(setPrintDisabled(false));
-        toast.success(`✅ Sale completed successfully! Bill Number: ${result.billNumber || 'N/A'}. You can now print or download the bill.`);
+        
+        // Calculate transaction summary
+        const invoiceTotal = previewData.total || 0; // Total of items only (cart amount)
+        const previousBalancePaid = previewData.previousBalancePaid || 0;
+        const grandTotalBeforeRounding = invoiceTotal + previousBalancePaid; // Grand total before rounding
+        const roundedGrandTotal = Math.round(grandTotalBeforeRounding);
+        const roundedPaidAmount = Math.round(currentPaidAmount);
+        const balanceDue = Math.max(0, roundedGrandTotal - roundedPaidAmount);
+        
+        // Prepare success modal data and show modal immediately
+        const modalData = {
+          transactionId: result.transactionId,
+          billNumber: result.billNumber || 'N/A',
+          paymentStatus: previewData.paymentStatus,
+          cartAmount: invoiceTotal, // Cart amount = total of items only (before previous balance)
+          previousBalancePaid: previousBalancePaid,
+          amountPaid: roundedPaidAmount,
+          balanceDue: balanceDue,
+          grandTotal: roundedGrandTotal,
+          partyName: updatedSellerInfo?.party_name || sellerInfo?.party_name || 'N/A',
+          partyMobile: updatedSellerInfo?.mobile_number || sellerInfo?.mobile_number || 'N/A',
+          partyEmail: updatedSellerInfo?.email || sellerInfo?.email || 'N/A',
+          currentBalance: updatedSellerInfo?.balance_amount || sellerInfo?.balance_amount || 0,
+          date: new Date().toLocaleDateString('en-IN', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+        };
+        
+        // Set modal data and show modal immediately after successful API response
+        console.log('Setting modal state:', { modalData, hasTransactionId: !!modalData.transactionId, hasCartAmount: modalData.cartAmount !== undefined });
+        setSuccessModalData(modalData);
+        setShowSuccessModal(true);
+        console.log('Modal state set - showSuccessModal:', true, 'successModalData:', modalData);
+        
+        // Show success toast
+        toast.success(`✅ Sale completed successfully! Bill Number: ${result.billNumber || 'N/A'}`);
       } else {
         toast.success('✅ Sale completed successfully!');
         dispatch(resetAfterSale());
@@ -459,6 +519,9 @@ const SellItem = () => {
       const errorMessage = error || 'Unknown error occurred';
       console.error('Sale submission error:', error);
       toast.error('❌ Transaction failed: ' + errorMessage);
+      // Clear modal state on error
+      setShowSuccessModal(false);
+      setSuccessModalData(null);
     }
   };
 
@@ -474,72 +537,23 @@ const SellItem = () => {
     }
     
     dispatch(setPrintClicked(true));
-    toast.info('🖨️ Preparing PDF for printing...');
-    
-    try {
-      // Fetch the PDF from the same endpoint used for download
-      const response = await apiClient.get(config.api.billPdf(previewData.transactionId), {
-        responseType: 'blob',
-        timeout: 30000 // 30 second timeout
-      });
-      
-      if (!response.data || response.data.size === 0) {
-        toast.error('❌ Received empty PDF file');
-        dispatch(setPrintClicked(false));
-        return;
-      }
-      
-      // Create a blob URL for the PDF
-      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-      
-      // Open the PDF in a new window
-      const printWindow = window.open(url, '_blank');
-      if (!printWindow) {
-        toast.error('❌ Unable to open print window. Please check your popup blocker settings.');
-        window.URL.revokeObjectURL(url);
-        dispatch(setPrintClicked(false));
-        return;
-      }
-      
-      // Wait for the PDF to load, then trigger print
-      // Note: PDFs may take a moment to render in the browser
-      const attemptPrint = () => {
-        try {
-          printWindow.focus();
-          printWindow.print();
-          toast.success('✅ Print dialog opened');
-          // Clean up the URL after a delay
-          setTimeout(() => {
-            window.URL.revokeObjectURL(url);
-          }, 2000);
-        } catch (printError) {
-          console.error('Print error:', printError);
-          // If print() fails, the PDF is still open and user can print manually
-          toast.info('📄 PDF opened in new window. Please use the browser\'s print button.');
-          window.URL.revokeObjectURL(url);
-          dispatch(setPrintClicked(false));
-        }
-      };
-      
-      // Try printing after a short delay to allow PDF to load
-      setTimeout(attemptPrint, 1000);
-      
-    } catch (error) {
-      console.error('Error fetching PDF for print:', error);
-      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
-      toast.error('❌ Error loading PDF for printing: ' + errorMsg);
-      dispatch(setPrintClicked(false));
-    }
+    await handlePrintPDF(previewData.transactionId);
+    dispatch(setPrintClicked(false));
   };
 
-  const handleDownloadPDF = async () => {
-    if (!previewData || !previewData.transactionId) {
+  const handleDownloadPDF = async (transactionId, billNumber) => {
+    const txId = transactionId || previewData?.transactionId;
+    const billNo = billNumber || previewData?.billNumber;
+    
+    if (!txId) {
       toast.warning('⚠️ Please complete the sale first to download PDF');
       return;
     }
+    
+    setDownloadingPDF(true);
     try {
       toast.info('📥 Preparing PDF download...');
-      const response = await apiClient.get(config.api.billPdf(previewData.transactionId), {
+      const response = await apiClient.get(config.api.billPdf(txId), {
         responseType: 'blob',
         timeout: 30000 // 30 second timeout
       });
@@ -552,7 +566,7 @@ const SellItem = () => {
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `bill_${previewData.billNumber || previewData.transactionId}_${getLocalDateString()}.pdf`);
+      link.setAttribute('download', `bill_${billNo || txId}_${getLocalDateString()}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -562,7 +576,110 @@ const SellItem = () => {
       console.error('Error downloading PDF:', error);
       const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
       toast.error('❌ Error downloading PDF: ' + errorMsg);
+    } finally {
+      setDownloadingPDF(false);
     }
+  };
+  
+  const handlePrintPDF = async (transactionId) => {
+    const txId = transactionId || previewData?.transactionId;
+    
+    if (!txId) {
+      toast.warning('⚠️ Please complete the sale first to print PDF');
+      return;
+    }
+    
+    setPrintingPDF(true);
+    try {
+      toast.info('🖨️ Preparing PDF for printing...');
+      const response = await apiClient.get(config.api.billPdf(txId), {
+        responseType: 'blob',
+        timeout: 30000
+      });
+      
+      if (!response.data || response.data.size === 0) {
+        toast.error('❌ Received empty PDF file');
+        return;
+      }
+      
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const printWindow = window.open(url, '_blank');
+      if (!printWindow) {
+        toast.error('❌ Unable to open print window. Please check your popup blocker settings.');
+        window.URL.revokeObjectURL(url);
+        return;
+      }
+      
+      setTimeout(() => {
+        try {
+          printWindow.focus();
+          printWindow.print();
+          toast.success('✅ Print dialog opened');
+          setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+          }, 2000);
+        } catch (printError) {
+          console.error('Print error:', printError);
+          toast.info('📄 PDF opened in new window. Please use the browser\'s print button.');
+          window.URL.revokeObjectURL(url);
+        }
+      }, 1000);
+    } catch (error) {
+      console.error('Error fetching PDF for print:', error);
+      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+      toast.error('❌ Error loading PDF for printing: ' + errorMsg);
+    } finally {
+      setPrintingPDF(false);
+    }
+  };
+  
+  const handleDownloadReceipt = async (transactionId, billNumber) => {
+    const txId = transactionId || previewData?.transactionId;
+    const billNo = billNumber || previewData?.billNumber;
+    
+    if (!txId) {
+      toast.warning('⚠️ Please complete the sale first to download receipt');
+      return;
+    }
+    
+    setDownloadingReceipt(true);
+    try {
+      toast.info('📥 Preparing receipt download...');
+      const response = await apiClient.get(config.api.billPdf(txId), {
+        responseType: 'blob',
+        timeout: 30000
+      });
+      
+      if (!response.data || response.data.size === 0) {
+        toast.error('❌ Received empty PDF file');
+        return;
+      }
+      
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `receipt_${billNo || txId}_${getLocalDateString()}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('✅ Receipt downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading receipt:', error);
+      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+      toast.error('❌ Error downloading receipt: ' + errorMsg);
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
+  
+  const handleNewSale = () => {
+    setShowSuccessModal(false);
+    setSuccessModalData(null);
+    dispatch(resetAfterSale());
+    dispatch(clearPreview());
+    dispatch(resetSellItem());
+    toast.info('🆕 Starting new sale...');
   };
 
   const handleRemoveFromPreview = (itemId) => {
@@ -643,8 +760,10 @@ const SellItem = () => {
     dispatch(clearPreview());
     dispatch(fetchSellerParties());
 
-    // Reset local UI flags
+    // Reset local UI flags and clear modal state
     setActionInProgress(false);
+    setShowSuccessModal(false);
+    setSuccessModalData(null);
 
     // Nice UX: jump to top so user starts from seller selection again
     window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
@@ -661,7 +780,7 @@ const SellItem = () => {
     if (actionInProgress || !previewData?.transactionId) return;
     setActionInProgress(true);
     try {
-      await handleDownloadPDF();
+      await handleDownloadPDF(previewData?.transactionId, previewData?.billNumber);
     } finally {
       setActionInProgress(false);
     }
@@ -1073,24 +1192,45 @@ const SellItem = () => {
                 {/* Calculate totals */}
                 {(() => {
                   const totalQty = previewData.items.reduce((sum, item) => sum + (parseInt(item.quantity) || 0), 0);
-                  const grandTotal = previewData.grandTotal || previewData.total || 0;
-                  const roundedOff = Math.round(grandTotal) - grandTotal;
-                  const finalGrandTotal = Math.round(grandTotal);
+                  // Calculate cart amount (items total after discount, NOT including previous balance)
+                  const cartAmount = previewData.total || 0; // Total of items only (after discount, before previous balance)
+                  const previousBalancePaid = previewData.previousBalancePaid || 0;
+                  const grandTotalBeforeRounding = cartAmount + previousBalancePaid; // Grand total before rounding
+                  // Calculate rounding on grand total
+                  const roundedOff = Math.round(grandTotalBeforeRounding) - grandTotalBeforeRounding;
+                  const finalGrandTotal = Math.round(grandTotalBeforeRounding); // Rounded grand total
                   const taxableAmt = previewData.subtotal || 0;
                   const cgstAmt = previewData.withGst ? (previewData.taxAmount || 0) / 2 : 0;
                   const sgstAmt = previewData.withGst ? (previewData.taxAmount || 0) / 2 : 0;
                   const totalTax = previewData.taxAmount || 0;
                   
+                  // Round payment amounts to whole numbers (no decimals)
+                  const rawPaidAmount = paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0);
+                  const roundedPaidAmount = Math.round(rawPaidAmount);
+                  // Calculate balance due using rounded grand total and rounded paid amount
+                  const balanceDue = Math.max(0, finalGrandTotal - roundedPaidAmount);
+                  
                   return (
                     <>
-                      {/* Less: Rounded Off */}
-                      {Math.abs(roundedOff) > 0.01 && (
-                  <tr>
-                          <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px' }}>
-                            Less: Rounded Off ({roundedOff > 0 ? '-' : '+'}):
+                      {/* Cart Amount (Items total after discount, NOT including previous balance) */}
+                      <tr>
+                        <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
+                          Cart Amount:
                     </td>
-                          <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontWeight: '600', fontSize: '12px' }}>
-                            ₹{roundedOff.toFixed(2)}
+                        <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontWeight: '600', fontSize: '12px' }}>
+                          ₹{cartAmount.toFixed(2)}
+                    </td>
+                        {!previewData.transactionId && <td></td>}
+                  </tr>
+
+                      {/* Rounding Off */}
+                      {Math.abs(roundedOff) > 0.0001 && (
+                  <tr>
+                          <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
+                            Rounded Off ({roundedOff > 0 ? '+' : '-'}):
+                    </td>
+                          <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontWeight: '600', fontSize: '12px', color: roundedOff > 0 ? '#28a745' : '#dc3545' }}>
+                            {roundedOff > 0 ? '+' : ''}₹{Math.abs(roundedOff).toFixed(2)}
                     </td>
                           {!previewData.transactionId && <td></td>}
                   </tr>
@@ -1148,16 +1288,16 @@ const SellItem = () => {
                     Amount Paid:
                   </td>
                         <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '600' }}>
-                    ₹{(paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0)).toFixed(2)}
+                    ₹{roundedPaidAmount.toFixed(2)}
                   </td>
                         {!previewData.transactionId && <td></td>}
                 </tr>
-                      <tr style={{ backgroundColor: ((previewData.grandTotal || previewData.total || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))) > 0 ? '#f8d7da' : '#d4edda' }}>
+                      <tr style={{ backgroundColor: balanceDue > 0 ? '#f8d7da' : '#d4edda' }}>
                         <td colSpan={previewData.withGst ? 8 : 7} style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '700' }}>
                     Balance Due:
                   </td>
                         <td style={{ textAlign: 'right', padding: '8px', border: '1px solid #ddd', fontSize: '12px', fontWeight: '700' }}>
-                    ₹{(((previewData.grandTotal || previewData.total) || 0) - (paymentStatus === 'partially_paid' ? (paidAmount || 0) : (previewData.paidAmount || 0))).toFixed(2)}
+                    ₹{balanceDue.toFixed(2)}
                   </td>
                         {!previewData.transactionId && <td></td>}
                 </tr>
@@ -1364,14 +1504,14 @@ const SellItem = () => {
                           setActionInProgress(true);
                           try {
                             const newStatus = e.target.value;
-                            const currentGrand = (previewData.grandTotal || previewData.total) || 0;
-                            const nextPaidAmount = (paidAmount === currentGrand) ? 0 : paidAmount;
                             dispatch(setPaymentStatus(newStatus));
-                            // Initialize paidAmount to 0 when switching to partially_paid
-                            if (paidAmount === currentGrand) {
+                            // ALWAYS set paidAmount to 0 when switching to partially_paid
+                            if (newStatus === 'partially_paid') {
                               dispatch(setPaidAmount(0));
+                              await handlePreview(null, { paymentStatus: newStatus, paidAmount: 0 });
+                            } else {
+                              await handlePreview(null, { paymentStatus: newStatus });
                             }
-                            await handlePreview(null, { paymentStatus: newStatus, paidAmount: nextPaidAmount });
                           } finally {
                             setActionInProgress(false);
                           }
@@ -1420,7 +1560,6 @@ const SellItem = () => {
                         }}>₹</span>
                         <input
                           type="number"
-                          step="any"
                           min="0"
                           max={previewData.grandTotal || previewData.total}
                           value={paidAmount === 0 ? '' : paidAmount}
@@ -1430,11 +1569,26 @@ const SellItem = () => {
                               dispatch(setPaidAmount(0));
                               return;
                             }
-                            const amount = parseFloat(val) || 0;
+                            // Only allow whole numbers (no decimals, no leading zeros)
+                            // Prevent values like 0.5, 0.25, etc.
+                            if (!/^\d+$/.test(val)) return;
+                            // Prevent leading zero (like 01, 02, etc.) unless it's just "0"
+                            if (val.length > 1 && val.startsWith('0')) return;
+                            const amount = parseInt(val) || 0;
                             const maxAmount = previewData.grandTotal || previewData.total || 0;
                             const finalAmount = Math.min(Math.max(0, amount), maxAmount);
                             // Update state immediately so input reflects the change
                             dispatch(setPaidAmount(finalAmount));
+                          }}
+                          onKeyDown={(e) => {
+                            // Prevent decimal point, comma, and mathematical signs
+                            if (['+', '-', '*', '/', 'e', 'E', '.', ','].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                            // Handle Enter key to blur
+                            if (e.key === 'Enter') {
+                              e.target.blur();
+                            }
                           }}
                           onBlur={async (e) => {
                             // Reset visual styling
@@ -1447,27 +1601,24 @@ const SellItem = () => {
                             try {
                               // Use the current Redux state paidAmount, not the input value
                               // This ensures we use the value that was set in onChange
-                              const currentPaidAmount = paidAmount || 0;
-                              const maxAmount = previewData.grandTotal || previewData.total || 0;
-                              const finalAmount = Math.min(Math.max(0, currentPaidAmount), maxAmount);
+                              // Round to whole number (no decimals)
+                              const currentPaidAmount = Math.round(paidAmount || 0);
+                              const grandTotal = previewData.grandTotal || previewData.total || 0;
+                              const roundedGrandTotal = Math.round(grandTotal);
+                              const finalAmount = Math.min(Math.max(0, currentPaidAmount), roundedGrandTotal);
                               
-                              // Ensure state is set correctly
+                              // Ensure state is set correctly (rounded value)
                               if (finalAmount !== paidAmount) {
                                 dispatch(setPaidAmount(finalAmount));
                               }
                               
-                              // Update preview with the current paid amount
+                              // Update preview with the current paid amount (rounded)
                               await handlePreview(null, {
                                 paymentStatus: 'partially_paid',
                                 paidAmount: finalAmount
                               });
                             } finally {
                               setActionInProgress(false);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.target.blur();
                             }
                           }}
                           disabled={actionInProgress}
@@ -1496,10 +1647,18 @@ const SellItem = () => {
                         justifyContent: 'space-between',
                         marginTop: '2px'
                       }}>
-                        <span>Total: <strong style={{ color: '#212529' }}>₹{(previewData.grandTotal || previewData.total || 0).toFixed(2)}</strong></span>
+                        <span>Total: <strong style={{ color: '#212529' }}>₹{(() => {
+                          const grandTotal = previewData.grandTotal || previewData.total || 0;
+                          return Math.round(grandTotal).toFixed(2);
+                        })()}</strong></span>
                         {paidAmount > 0 && (
                           <span style={{ color: '#dc3545', fontWeight: '600' }}>
-                            Due: ₹{Math.max(0, (previewData.grandTotal || previewData.total || 0) - paidAmount).toFixed(2)}
+                            Due: ₹{(() => {
+                              const grandTotal = previewData.grandTotal || previewData.total || 0;
+                              const roundedGrandTotal = Math.round(grandTotal);
+                              const roundedPaidAmount = Math.round(paidAmount || 0);
+                              return Math.max(0, roundedGrandTotal - roundedPaidAmount).toFixed(2);
+                            })()}
                           </span>
                         )}
                       </div>
@@ -1790,90 +1949,26 @@ const SellItem = () => {
         <div className="card sticky-search-section">
           {/* Seller Selection */}
           <div className="form-group">
-            <label>Select Seller Party</label>
-            {loading.sellerParties && (
-              <div style={{ 
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '40px',
-                backgroundColor: '#f8f9fa', 
-                borderRadius: '8px', 
-                color: '#6c757d', 
-                fontSize: '14px',
-                minHeight: '200px',
-                gap: '12px',
-                width: '100%'
-              }}>
-                <div style={{ 
-                  display: 'inline-block',
-                  width: '40px',
-                  height: '40px',
-                  border: '3px solid #e1e8ed',
-                  borderTop: '3px solid #3498db',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite'
-                }}></div>
-                <span>Loading seller parties...</span>
-              </div>
-            )}
-            {errors.sellerParties && (
-              <div style={{ 
-                padding: '12px', 
-                backgroundColor: '#fff5f5', 
-                borderRadius: '8px', 
-                color: '#e74c3c', 
-                fontSize: '14px',
-                border: '1px solid #fecaca'
-              }}>
-                ⚠️ Error: {errors.sellerParties}
-              </div>
-            )}
-            {!loading.sellerParties && !errors.sellerParties && sellerParties.length === 0 && (
-              <div style={{ 
-                padding: '12px', 
-                backgroundColor: '#fff3cd', 
-                borderRadius: '8px', 
-                color: '#856404', 
-                fontSize: '14px',
-                border: '1px solid #ffeaa7'
-              }}>
-                ℹ️ No seller parties available. Please add seller parties first.
-              </div>
-            )}
+            <label>Select Seller Party *</label>
             <div className="search-wrapper" style={{ position: 'relative' }}>
               <input
                 ref={sellerSearchInputRef}
                 type="text"
-                placeholder="👤 Search seller party by name, mobile, or address..."
+                placeholder="Search seller party by name, mobile, or address..."
                 value={sellerSearchQuery}
                 onChange={(e) => {
-                  const newValue = e.target.value;
-                  const cursorPosition = e.target.selectionStart;
-                  dispatch(setSellerSearchQuery(newValue));
-                  // Restore cursor position after state update
-                  setTimeout(() => {
-                    if (sellerSearchInputRef.current) {
-                      sellerSearchInputRef.current.setSelectionRange(cursorPosition, cursorPosition);
-                      sellerSearchInputRef.current.focus();
-                    }
-                  }, 0);
-                }}
-                onFocus={(e) => {
-                  // Maintain focus
-                  if (sellerParties.length > 0) {
-                    if (sellerSearchQuery) {
-                      dispatch(setShowSellerSuggestions(filteredSellerParties.length > 0));
-                    } else {
-                      dispatch(setShowSellerSuggestions(true));
-                    }
+                  // Store the raw value (with spaces) for display, but trim for filtering
+                  dispatch(setSellerSearchQuery(e.target.value));
+                  if (!e.target.value.trim()) {
+                    dispatch(setSelectedSeller(''));
                   }
                 }}
-                onKeyDown={(e) => {
-                  // Prevent any interference with typing
-                  e.stopPropagation();
+                onFocus={() => {
+                  if (sellerSearchQuery) {
+                    dispatch(setShowSellerSuggestions(true));
+                  }
                 }}
+                required
               />
               {selectedSeller && sellerInfo && (
                 <button
@@ -1914,81 +2009,70 @@ const SellItem = () => {
                   ×
                 </button>
               )}
-              {showSellerSuggestions && (sellerSearchQuery ? filteredSellerParties : sellerParties).length > 0 && (
-                <div className="suggestions seller-suggestions">
-                  {(sellerSearchQuery ? filteredSellerParties : sellerParties).map(party => (
+              {showSellerSuggestions && filteredSellerParties.length > 0 && (
+                <div className="suggestions" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, maxHeight: '200px', overflowY: 'auto' }}>
+                  {filteredSellerParties.map(party => (
                     <div
                       key={party.id}
                       className="suggestion-item"
                       onClick={() => {
                         dispatch(selectSellerParty(party));
-                        // Close suggestions immediately
                         dispatch(setShowSellerSuggestions(false));
                       }}
-                      tabIndex={0}
-                    >
-                      <div style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
                         gap: '10px'
-                      }}>
-                        <span style={{ fontWeight: '600', color: '#2c3e50' }}>{party.party_name}</span>
-                        {party.mobile_number && (
-                          <span style={{ fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>
-                            📱 {party.mobile_number}
-                          </span>
-                        )}
-                      </div>
+                      }}
+                    >
+                      <span style={{ fontWeight: '600' }}>{party.party_name}</span>
+                      {party.mobile_number && (
+                        <span style={{ fontSize: '12px', color: '#6c757d', whiteSpace: 'nowrap' }}>
+                          📱 {party.mobile_number}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
-              {sellerSearchQuery && filteredSellerParties.length === 0 && sellerParties.length > 0 && (
-                <div className="suggestions seller-suggestions">
-                  <div className="suggestion-item" style={{ color: '#6c757d', cursor: 'default' }}>
-                    No seller party found
-                  </div>
+              {sellerSearchQuery.trim() && filteredSellerParties.length === 0 && sellerParties.length > 0 && (
+                <div className="suggestions" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000 }}>
+                  <div className="suggestion-item">No seller party found</div>
                 </div>
               )}
             </div>
+            {loading.sellerParties ? (
+              <p style={{ color: '#666', fontSize: '14px', marginTop: '5px' }}>
+                Fetching seller parties...
+              </p>
+            ) : errors.sellerParties ? (
+              <p style={{ color: '#ff6b6b', fontSize: '14px', marginTop: '5px' }}>
+                {errors.sellerParties}
+              </p>
+            ) : sellerParties.length === 0 ? (
+              <p style={{ color: '#ff6b6b', fontSize: '14px', marginTop: '5px' }}>
+                No seller parties found. Please <Link to="/add-seller-party">add a seller party</Link> first.
+              </p>
+            ) : null}
           </div>
 
           {/* Seller Info Display */}
           {sellerInfo && (
-            <div className="seller-info">
-              <div>
-                <strong>Name:</strong> 
-                <span style={{ color: '#2c3e50', fontWeight: '500' }}>{sellerInfo.party_name}</span>
-              </div>
-              <div>
-                <strong>Mobile:</strong> 
-                <span style={{ color: '#495057' }}>{sellerInfo.mobile_number || 'N/A'}</span>
-              </div>
-              <div>
-                <strong>Address:</strong> 
-                <span style={{ color: '#495057' }}>{sellerInfo.address || 'N/A'}</span>
-              </div>
-              {sellerInfo.gst_number && (
-                <div>
-                  <strong>GST Number:</strong> 
-                  <span style={{ color: '#495057' }}>{sellerInfo.gst_number}</span>
-                </div>
-              )}
-              <div>
-                <strong>Previous Balance:</strong> 
-                <span style={{ 
-                  color: parseFloat(sellerInfo.balance_amount || 0) > 0 ? '#e74c3c' : '#27ae60',
-                  fontWeight: '600'
-                }}>
-                  ₹{parseFloat(sellerInfo.balance_amount || 0).toFixed(2)}
-                </span>
-              </div>
-              <div>
-                <strong>Total Paid:</strong> 
-                <span style={{ color: '#27ae60', fontWeight: '600' }}>
-                  ₹{parseFloat(sellerInfo.paid_amount || 0).toFixed(2)}
-                </span>
-              </div>
+            <div className="seller-info" style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+              gap: '15px',
+              marginTop: '15px',
+              padding: '15px',
+              backgroundColor: '#f9f9f9',
+              borderRadius: '5px'
+            }}>
+              <div><strong>Name:</strong> {sellerInfo.party_name}</div>
+              <div><strong>Mobile:</strong> {sellerInfo.mobile_number || 'N/A'}</div>
+              <div><strong>Address:</strong> {sellerInfo.address || 'N/A'}</div>
+              {sellerInfo.gst_number && <div><strong>GST Number:</strong> {sellerInfo.gst_number}</div>}
+              <div><strong>Balance Amount:</strong> ₹{sellerInfo.balance_amount || 0}</div>
+              <div><strong>Paid Amount:</strong> ₹{sellerInfo.paid_amount || 0}</div>
             </div>
           )}
 
@@ -2018,8 +2102,9 @@ const SellItem = () => {
                 placeholder="🔍 Type product name, brand, or HSN to search and add items..."
                 value={searchQuery}
                 onChange={(e) => {
+                  // Store the raw value (with spaces) for display, but trim for API calls
                   dispatch(setSearchQuery(e.target.value));
-                  if (!e.target.value) {
+                  if (!e.target.value.trim()) {
                     setSelectedItemIds(new Set());
                     dispatch(clearSuggestedItems());
                   }
@@ -2056,14 +2141,7 @@ const SellItem = () => {
                     if (firstSuggestion) firstSuggestion.focus();
                   }
                 }}
-                autoFocus={selectedItems.length === 0}
-                ref={(input) => {
-                  itemSearchInputRef.current = input;
-                  if (input && selectedItems.length === 0) {
-                    // Focus without scrolling to prevent jumping to seller section
-                    input.focus({ preventScroll: true });
-                  }
-                }}
+                ref={itemSearchInputRef}
               />
               {/* Old dropdown - hidden, modal is used instead */}
               {false && suggestedItems.length > 0 && (
@@ -2306,7 +2384,7 @@ const SellItem = () => {
               )}
                 </>
               )}
-              {searchQuery.length >= 2 && suggestedItems.length === 0 && (
+              {searchQuery.trim().length >= 2 && suggestedItems.length === 0 && (
                 <div className="suggestions item-suggestions">
                   <div className="suggestion-item" style={{ color: '#6c757d', cursor: 'default', textAlign: 'center' }}>
                     No items found. Try a different search term.
@@ -2600,6 +2678,234 @@ const SellItem = () => {
             </div>
           )}
       </div>
+      {/* Success Modal - Rendered using Portal to ensure it appears above all content */}
+      {/* Show modal immediately after successful API response on the preview page */}
+      {showSuccessModal && successModalData && successModalData.transactionId && createPortal(
+        <div 
+          className="modal-overlay" 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              // Don't close on outside click - user must use buttons
+            }
+          }}
+        >
+          <div 
+            className="modal-content" 
+            style={{ 
+              maxWidth: '700px', 
+              width: '90%',
+              maxHeight: '90vh', 
+              overflowY: 'auto',
+              backgroundColor: '#fff',
+              borderRadius: '8px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+              display: 'flex',
+              flexDirection: 'column'
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header" style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#fff' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ 
+                  width: '40px', 
+                  height: '40px', 
+                  borderRadius: '50%', 
+                  backgroundColor: '#28a745', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontSize: '24px',
+                  fontWeight: 'bold'
+                }}>✓</span>
+                Transaction Completed Successfully
+              </h3>
+              <button className="modal-close" onClick={() => {
+                setShowSuccessModal(false);
+                setSuccessModalData(null);
+              }}>×</button>
+            </div>
+            
+            <div className="modal-body" style={{ padding: '20px' }}>
+              {/* Bill Number */}
+              <div style={{ textAlign: 'center', marginBottom: '20px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+                <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '5px' }}>Bill Number</div>
+                <div style={{ fontSize: '16px', fontWeight: '600', color: '#2c3e50' }}>{successModalData.billNumber}</div>
+              </div>
+
+              {/* Transaction Summary */}
+              <div style={{ marginBottom: '25px' }}>
+                <h4 style={{ marginBottom: '15px', color: '#2c3e50', fontSize: '16px', fontWeight: '600' }}>Transaction Summary</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {/* Payment Status */}
+                  <div style={{
+                    padding: '15px',
+                    background: 'linear-gradient(135deg, #d4edda 0%, #ffffff 100%)',
+                    borderRadius: '10px',
+                    border: '1px solid #c3e6cb'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Payment Status
+                    </div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#28a745', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {successModalData.paymentStatus === 'fully_paid' ? '✓ Fully Paid' : '⚡ Partially Paid'}
+                    </div>
+                  </div>
+
+                  {/* Cart Amount */}
+                  <div style={{
+                    padding: '15px',
+                    background: 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)',
+                    borderRadius: '10px',
+                    border: '1px solid #dee2e6'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Cart Amount
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#212529' }}>
+                      ₹{(successModalData.cartAmount || 0).toFixed(2)}
+                    </div>
+                  </div>
+
+                  {/* Previous Balance Paid */}
+                  {successModalData.previousBalancePaid > 0 && (
+                    <div style={{
+                      padding: '15px',
+                      background: 'linear-gradient(135deg, #fff5e6 0%, #ffffff 100%)',
+                      borderRadius: '10px',
+                      border: '1px solid #ffd89b'
+                    }}>
+                      <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Previous Balance Paid
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: '700', color: '#e65100' }}>
+                        +₹{(successModalData.previousBalancePaid || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Amount Paid */}
+                  <div style={{
+                    padding: '15px',
+                    background: 'linear-gradient(135deg, #d4edda 0%, #ffffff 100%)',
+                    borderRadius: '10px',
+                    border: '1px solid #c3e6cb'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Amount Paid
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: '#28a745' }}>
+                      ₹{(successModalData.amountPaid || 0).toFixed(2)}
+                    </div>
+                  </div>
+
+                  {/* Balance Due */}
+                  <div style={{
+                    padding: '15px',
+                    background: (successModalData.balanceDue || 0) > 0 
+                      ? 'linear-gradient(135deg, #fff5f5 0%, #ffffff 100%)'
+                      : 'linear-gradient(135deg, #d4edda 0%, #ffffff 100%)',
+                    borderRadius: '10px',
+                    border: (successModalData.balanceDue || 0) > 0 
+                      ? '1px solid #fecaca'
+                      : '1px solid #c3e6cb'
+                  }}>
+                    <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '8px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Balance Due
+                    </div>
+                    <div style={{ fontSize: '18px', fontWeight: '700', color: (successModalData.balanceDue || 0) > 0 ? '#dc3545' : '#28a745' }}>
+                      ₹{(successModalData.balanceDue || 0).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Party Information */}
+              <div style={{ marginBottom: '25px' }}>
+                <h4 style={{ marginBottom: '15px', color: '#2c3e50', fontSize: '16px', fontWeight: '600' }}>Party Information</h4>
+                <div style={{ padding: '15px', backgroundColor: '#f8f9fa', borderRadius: '8px', border: '1px solid #dee2e6' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '5px', fontWeight: '600', textTransform: 'uppercase' }}>Party Name</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#2c3e50' }}>{successModalData.partyName}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '5px', fontWeight: '600', textTransform: 'uppercase' }}>Mobile Number</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#2c3e50' }}>{successModalData.partyMobile}</div>
+                    </div>
+                  </div>
+                  {successModalData.partyEmail && successModalData.partyEmail !== 'N/A' && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '5px', fontWeight: '600', textTransform: 'uppercase' }}>Email</div>
+                      <div style={{ fontSize: '14px', fontWeight: '600', color: '#2c3e50' }}>{successModalData.partyEmail}</div>
+                    </div>
+                  )}
+                  <div style={{ paddingTop: '12px', borderTop: '1px solid #dee2e6' }}>
+                    <div style={{ fontSize: '11px', color: '#6c757d', marginBottom: '5px', fontWeight: '600', textTransform: 'uppercase' }}>Current Balance</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: parseFloat(successModalData.currentBalance) >= 0 ? '#28a745' : '#dc3545' }}>
+                      ₹{parseFloat(successModalData.currentBalance).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Date */}
+              <div style={{ textAlign: 'center', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '8px', fontSize: '12px', color: '#6c757d' }}>
+                Transaction Date: {successModalData.date}
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ position: 'sticky', bottom: 0, backgroundColor: '#fff', borderTop: '1px solid #dee2e6', padding: '15px 20px', display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleNewSale}
+                className="btn btn-primary"
+                disabled={downloadingPDF || printingPDF || downloadingReceipt}
+                style={{ minWidth: '120px' }}
+              >
+                🆕 New Sale
+              </button>
+              <button
+                onClick={() => handleDownloadPDF(successModalData.transactionId, successModalData.billNumber)}
+                className="btn btn-primary"
+                disabled={downloadingPDF || printingPDF || downloadingReceipt}
+                style={{ minWidth: '140px' }}
+              >
+                {downloadingPDF ? '⏳ Downloading...' : '📥 Download PDF'}
+              </button>
+              <button
+                onClick={() => handlePrintPDF(successModalData.transactionId)}
+                className="btn btn-success"
+                disabled={downloadingPDF || printingPDF || downloadingReceipt}
+                style={{ minWidth: '120px' }}
+              >
+                {printingPDF ? '⏳ Opening...' : '🖨️ Print PDF'}
+              </button>
+              <button
+                onClick={() => handleDownloadReceipt(successModalData.transactionId, successModalData.billNumber)}
+                className="btn btn-secondary"
+                disabled={downloadingPDF || printingPDF || downloadingReceipt}
+                style={{ minWidth: '140px' }}
+              >
+                {downloadingReceipt ? '⏳ Downloading...' : '📥 Download Receipt'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Item Search Modal */}
       <ItemSearchModal
         isOpen={showItemSearchModal}

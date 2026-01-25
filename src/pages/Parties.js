@@ -78,7 +78,8 @@ const Parties = () => {
   // Debounce search query - update debouncedSearchQuery after 1 second of no typing
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
+      const trimmedQuery = searchQuery.trim();
+      setDebouncedSearchQuery(trimmedQuery);
     }, 1000); // 1 second delay
 
     return () => clearTimeout(timer);
@@ -1053,15 +1054,30 @@ const Parties = () => {
                 <label>Payment Amount *</label>
                 <input
                   type="number"
-                  step="0.01"
-                  min="0.01"
+                  min="1"
                   max={parseFloat(selectedParty.balance_amount || 0)}
                   value={paymentAmount}
                   onChange={(e) => {
                     const val = e.target.value;
+                    if (val === '') {
+                      setPaymentAmount('');
+                      return;
+                    }
+                    // Only allow whole numbers (no decimals, no leading zeros)
+                    // Prevent values like 0.5, 0.25, etc.
+                    if (!/^\d+$/.test(val)) return;
+                    // Prevent leading zero (like 01, 02, etc.) unless it's just "0"
+                    if (val.length > 1 && val.startsWith('0')) return;
                     const maxAmount = parseFloat(selectedParty.balance_amount || 0);
-                    if (val === '' || (parseFloat(val) >= 0 && parseFloat(val) <= maxAmount)) {
+                    const amount = parseInt(val) || 0;
+                    if (amount >= 1 && amount <= maxAmount) {
                       setPaymentAmount(val);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    // Prevent decimal point, comma, and mathematical signs
+                    if (['+', '-', '*', '/', 'e', 'E', '.', ','].includes(e.key)) {
+                      e.preventDefault();
                     }
                   }}
                   placeholder="Enter payment amount"
